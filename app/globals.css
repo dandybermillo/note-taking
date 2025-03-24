@@ -1,0 +1,356 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 224 71.4% 4.1%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 71.4% 4.1%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71.4% 4.1%;
+    --primary: 262.1 83.3% 57.8%;
+    --primary-rgb: 124, 58, 237; /* RGB value for primary color */
+    --primary-foreground: 210 20% 98%;
+    --secondary: 220 14.3% 95.9%;
+    --secondary-foreground: 220.9 39.3% 11%;
+    --muted: 220 14.3% 95.9%;
+    --muted-foreground: 220 8.9% 46.1%;
+    --accent: 220 14.3% 95.9%;
+    --accent-foreground: 220.9 39.3% 11%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 262.1 83.3% 57.8%;
+    --radius: 0.5rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+    --highlight-color: #fef08a; /* Light yellow highlight color for selected text */
+  }
+  .dark {
+    --background: 224 71.4% 4.1%;
+    --foreground: 210 20% 98%;
+    --card: 224 71.4% 4.1%;
+    --card-foreground: 210 20% 98%;
+    --popover: 224 71.4% 4.1%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 263.4 70% 50.4%;
+    --primary-rgb: 95, 38, 255; /* RGB value for primary color */
+    --primary-foreground: 210 20% 98%;
+    --secondary: 215 27.9% 16.9%;
+    --secondary-foreground: 210 20% 98%;
+    --muted: 215 27.9% 16.9%;
+    --muted-foreground: 217.9 10.6% 64.9%;
+    --accent: 215 27.9% 16.9%;
+    --accent-foreground: 210 20% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 215 27.9% 16.9%;
+    --input: 215 27.9% 16.9%;
+    --ring: 263.4 70% 50.4%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+    --highlight-color: #854d0e; /* Darker yellow for dark mode selected text */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Improve cursor visibility in the editor */
+  .ProseMirror {
+    @apply outline-none;
+    caret-color: theme("colors.primary.DEFAULT");
+    caret-width: 2px;
+  }
+
+  /* Remove white border around editor content */
+  .ProseMirror p {
+    @apply m-0 mb-4;
+  }
+
+  /* Improve code block styling */
+  .ProseMirror pre {
+    @apply bg-muted/50 p-4 rounded-md font-mono text-sm my-4 overflow-x-auto;
+  }
+
+  /* Improve blockquote styling */
+  .ProseMirror blockquote {
+    @apply border-l-4 border-primary/30 pl-4 italic my-4;
+  }
+
+  /* Improve task list styling */
+  .ProseMirror ul[data-type="taskList"] {
+    @apply list-none p-0;
+  }
+
+  .ProseMirror ul[data-type="taskList"] li {
+    @apply flex gap-2 my-2;
+  }
+
+  .ProseMirror ul[data-type="taskList"] li > label {
+    @apply mr-2;
+  }
+
+  .ProseMirror ul[data-type="taskList"] li > div {
+    @apply flex-1;
+  }
+
+  /* Improve table styling */
+  .ProseMirror table {
+    @apply border-collapse w-full my-4;
+  }
+
+  .ProseMirror th {
+    @apply bg-muted/30 font-bold;
+  }
+
+  .ProseMirror th,
+  .ProseMirror td {
+    @apply border border-border p-2;
+  }
+
+  /* Improve heading styling */
+  .ProseMirror h1 {
+    @apply text-2xl font-bold mb-4 mt-6;
+  }
+
+  .ProseMirror h2 {
+    @apply text-xl font-bold mb-3 mt-5;
+  }
+
+  .ProseMirror h3 {
+    @apply text-lg font-bold mb-3 mt-4;
+  }
+
+  /* Improve link styling */
+  .ProseMirror a {
+    @apply text-primary underline underline-offset-2 hover:text-primary/80;
+  }
+
+  /* Improve image styling */
+  .ProseMirror img {
+    @apply max-w-full rounded-md my-4;
+  }
+
+  /* Animation for the AI icon */
+  @keyframes cursor-pulse {
+    0%,
+    100% {
+      opacity: 0.6;
+      transform: scale(1);
+      box-shadow: 0 0 0 rgba(var(--primary), 0.1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.1);
+      box-shadow: 0 0 5px rgba(var(--primary), 0.3);
+    }
+  }
+
+  .ai-icon-pulse {
+    animation: cursor-pulse 2s infinite ease-in-out;
+  }
+
+  /* Enhanced animation for selected text AI icon */
+  @keyframes selection-pulse {
+    0%,
+    100% {
+      opacity: 0.8;
+      transform: scale(1);
+      box-shadow: 0 0 3px rgba(var(--primary), 0.3);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.15);
+      box-shadow: 0 0 8px rgba(var(--primary), 0.5);
+    }
+  }
+
+  .ai-icon-pulse-selection {
+    animation: selection-pulse 1.5s infinite ease-in-out;
+  }
+
+  /* Animation for the connection line */
+  @keyframes pulse-line {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+
+  .connection-line {
+    animation: pulse-line 2s infinite ease-in-out;
+    box-shadow: 0 0 3px rgba(var(--primary), 0.3);
+  }
+
+  /* Animations for the AI input field */
+  .animate-in {
+    animation-duration: 150ms;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    animation-fill-mode: both;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .fade-in {
+    animation-name: fade-in;
+  }
+
+  @keyframes slide-in-from-top-2 {
+    from {
+      transform: translateY(-0.5rem);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .slide-in-from-top-2 {
+    animation-name: slide-in-from-top-2;
+  }
+
+  /* AI input spacer styles */
+  .ai-input-spacer {
+    display: block;
+    height: auto !important;
+    min-height: auto !important;
+    margin: 8px 0;
+    position: relative;
+    z-index: 10;
+    width: 100%;
+  }
+
+  /* Container for the AI input inside the spacer */
+  .ai-input-container {
+    width: 100%;
+    max-width: 600px;
+    margin-left: 24px;
+    position: relative;
+    z-index: 50;
+  }
+
+  /* Cursor AI-style input */
+  .cursor-ai-input {
+    @apply bg-background/95 backdrop-blur-sm;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    isolation: isolate;
+  }
+
+  .cursor-ai-input input {
+    @apply bg-transparent border-none shadow-none;
+  }
+
+  .cursor-ai-input input:focus {
+    @apply ring-0 border-none shadow-none;
+  }
+
+  /* Styles for auto-expanding textarea */
+  .cursor-ai-input textarea {
+    @apply bg-transparent border border-input shadow-none;
+    resize: none;
+    overflow-y: hidden;
+    transition: height 0.1s ease-out;
+  }
+
+  .cursor-ai-input textarea:focus {
+    @apply ring-1 ring-ring outline-none;
+    box-shadow: 0 0 0 2px rgba(var(--ring), 0.1);
+  }
+
+  /* Support for multiline prompts */
+  .cursor-ai-input textarea::placeholder {
+    color: rgba(var(--muted-foreground), 0.7);
+  }
+
+  /* Smooth transitions for AI input */
+  .cursor-ai-input {
+    transition: all 0.2s ease-in-out;
+    transform-origin: top left;
+  }
+
+  .cursor-ai-input.entering {
+    opacity: 0;
+    transform: scale(0.98) translateY(-8px);
+  }
+
+  .cursor-ai-input.entered {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+
+  /* Enhanced highlight for selected text during AI input */
+  .ProseMirror mark[data-color] {
+    background-color: var(--highlight-color) !important;
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+    margin: 0 -1px;
+    transition: background-color 0.3s ease, opacity 0.3s ease;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05);
+  }
+  
+  /* Highlights are only visible when AI input is active */
+  .ai-input-spacer ~ .ProseMirror mark[data-color] {
+    opacity: 1;
+  }
+  
+  /* When AI input is removed, highlights fade out */
+  .ProseMirror:not(:has(.ai-input-spacer)) mark[data-color] {
+    background-color: transparent !important;
+    box-shadow: none;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Additional class for dark mode support */
+  .dark .ProseMirror mark[data-color] {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+}
+
