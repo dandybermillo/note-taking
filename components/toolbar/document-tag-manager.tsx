@@ -69,12 +69,16 @@ export function DocumentTagManager({ editor }: DocumentTagManagerProps) {
     fetchDocumentTags()
     
     // Setup transaction listener to update when document changes
-    const unsubscribe = editor.on('transaction', () => {
+    const unsubscribeHandler = editor.on('transaction', () => {
       fetchDocumentTags()
     })
     
     return () => {
-      unsubscribe()
+      // Properly check and handle the unsubscribe
+      if (editor && editor.off) {
+        // If editor.off method exists, use it with the transaction event
+        editor.off('transaction');
+      }
     }
   }, [editor])
 

@@ -361,8 +361,8 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     // Debounce the sync to avoid too many updates
     const debouncedSync = debounce(syncDocumentTitle, 1000);
     
-    // Create a transaction handler
-    const handler = editor.on('update', ({ editor, transaction }) => {
+    // Add the update event listener
+    editor.on('update', ({ editor, transaction }) => {
       if (transaction.docChanged) {
         debouncedSync();
       }
@@ -373,7 +373,14 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     
     // Cleanup
     return () => {
-      handler();
+      // Properly unregister the event
+      if (editor && editor.off) {
+        editor.off('update');
+      }
+      // Also make sure to cancel any pending debounced calls
+      if (debouncedSync && typeof debouncedSync.cancel === 'function') {
+        debouncedSync.cancel();
+      }
     };
   }, [editor]);
 

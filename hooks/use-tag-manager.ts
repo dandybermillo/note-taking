@@ -48,10 +48,13 @@ export function useTagManager(editor: any): TagOperations {
     updateTags();
     
     // Subscribe to changes
-    const unsubscribe = editor.on('transaction', updateTags);
+    editor.on('transaction', updateTags);
     
     return () => {
-      unsubscribe();
+      // Properly unregister the event
+      if (editor && editor.off) {
+        editor.off('transaction', updateTags);
+      }
     };
   }, [editor]);
   
