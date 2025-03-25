@@ -7,10 +7,12 @@ import type { Note } from "@/types/note"
 import { PlusIcon, SaveIcon, PanelLeftIcon, PanelRightIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Sidebar from "@/components/sidebar"
+import { EditorToolbar } from "@/components/editor-toolbar"
 
 export default function Home() {
-  const [showSidebar, setShowSidebar] = useState(false)
+  const [showSidebar, setShowSidebar] = useState(true)
   const [showAIChat, setShowAIChat] = useState(true)
+  const [editorInstance, setEditorInstance] = useState<any>(null)
   const [notes, setNotes] = useState<Note[]>([
     {
       id: "welcome",
@@ -95,6 +97,7 @@ export default function Home() {
           onSelectNote={selectNote}
           onCreateNote={createNewNote}
           onUpdateNoteTitle={updateNoteTitle}
+          editor={editorInstance}
         />
       )}
 
@@ -155,8 +158,20 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden">
-          <Editor content={currentNote.content} onUpdate={updateCurrentNote} minimal={true} />
+        <div className="flex-1 overflow-hidden flex flex-col">
+          {editorInstance && (
+            <div className="editor-toolbar">
+              <EditorToolbar editor={editorInstance} />
+            </div>
+          )}
+          <div className="flex-1">
+            <Editor 
+              content={currentNote.content} 
+              onUpdate={updateCurrentNote} 
+              minimal={true} 
+              onEditorReady={(editor) => setEditorInstance(editor)}
+            />
+          </div>
         </div>
       </div>
     </div>

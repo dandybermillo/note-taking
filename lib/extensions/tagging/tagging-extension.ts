@@ -2,7 +2,7 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { DecorationSet, Decoration } from '@tiptap/pm/view';
 import { v4 as uuidv4 } from 'uuid';
-import { Tag, TaggedRange, TaggingOptions, TaggingState } from './tag-types';
+import { Tag, TaggedRange, TaggingOptions, TaggingState, TagType } from './tag-types';
 
 export const TaggingExtensionKey = new PluginKey('tagging');
 
@@ -13,6 +13,7 @@ export const TaggingExtension = Extension.create<TaggingOptions>({
     return {
       onTagApplied: () => {},
       onTagRemoved: () => {},
+      onDocumentTagsUpdated: () => {},
       defaultTags: [],
     };
   },
@@ -46,10 +47,16 @@ export const TaggingExtension = Extension.create<TaggingOptions>({
         const currentRanges = this.storage.taggedRanges;
         
         // Add or update the tag
+        // Mark it as not a document tag
+        const tagWithType = {
+          ...tag,
+          isDocumentTag: false,
+        };
+        
         if (!currentTags[tag.id]) {
           this.storage.tags = {
             ...currentTags,
-            [tag.id]: tag,
+            [tag.id]: tagWithType,
           };
         }
         
@@ -61,13 +68,78 @@ export const TaggingExtension = Extension.create<TaggingOptions>({
         
         // Call the onTagApplied callback if provided
         if (this.options.onTagApplied) {
-          this.options.onTagApplied(tag, taggedRange);
+          this.options.onTagApplied(tagWithType, taggedRange);
         }
         
         // Force a re-render of decorations
         this.editor.view.dispatch(this.editor.state.tr.setMeta(TaggingExtensionKey, this.storage));
         
         return true;
+      },
+
+      // Add a document-level tag (which doesn't have a range)
+      addDocumentTag: (tag: Tag) => ({ commands }) => {
+        // Mark this as a document tag
+        const documentTag = {
+          ...tag,
+          isDocumentTag: true,
+        };
+        
+        // Update the storage with the document tag
+        const currentTags = this.storage.tags;
+        
+        // Add the tag to storage
+        this.storage.tags = {
+          ...currentTags,
+          [tag.id]: documentTag,
+        };
+        
+        // Call the document tags updated callback if provided
+        if (this.options.onDocumentTagsUpdated) {
+          const documentTags = Object.values(this.storage.tags)
+            .filter(t => t.isDocumentTag) as Tag[];
+          this.options.onDocumentTagsUpdated(documentTags);
+        }
+        
+        // Force a re-render
+        this.editor.view.dispatch(this.editor.state.tr.setMeta(TaggingExtensionKey, this.storage));
+        
+        return true;
+      },
+      
+      // Remove a document-level tag
+      removeDocumentTag: (tagId: string) => ({ commands }) => {
+        // Get current tags
+        const currentTags = this.storage.tags;
+        
+        // Check if the tag exists and is a document tag
+        const tag = currentTags[tagId];
+        if (!tag || !tag.isDocumentTag) return false;
+        
+        // Create a new tags object without this tag
+        const newTags = { ...currentTags };
+        delete newTags[tagId];
+        
+        // Update storage
+        this.storage.tags = newTags;
+        
+        // Call the document tags updated callback if provided
+        if (this.options.onDocumentTagsUpdated) {
+          const documentTags = Object.values(this.storage.tags)
+            .filter(t => t.isDocumentTag) as Tag[];
+          this.options.onDocumentTagsUpdated(documentTags);
+        }
+        
+        // Force a re-render
+        this.editor.view.dispatch(this.editor.state.tr.setMeta(TaggingExtensionKey, this.storage));
+        
+        return true;
+      },
+      
+      // Get all document tags
+      getDocumentTags: () => () => {
+        return Object.values(this.storage.tags)
+          .filter(tag => tag.isDocumentTag);
       },
       
       removeTag: (rangeId: string) => ({ commands }) => {

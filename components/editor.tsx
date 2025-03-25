@@ -27,7 +27,11 @@ import { createPortal } from 'react-dom'
 
 // Import tagging extension
 import { TaggingExtension } from "@/lib/extensions/tagging/tagging-extension"
-import { Tag } from "@/lib/extensions/tagging/tag-types"
+import { Tag, TagType } from "@/lib/extensions/tagging/tag-types"
+
+// Import document properties extension
+import { DocumentPropertiesNode } from "@/lib/extensions/document-properties"
+import "@/lib/extensions/document-properties/document-properties.css"
 
 // Import AI icon component
 import { AIIcon } from "@/components/ai-icon/ai-icon"
@@ -79,9 +83,10 @@ interface EditorProps {
   content: string
   onUpdate: (content: string) => void
   minimal?: boolean
+  onEditorReady?: (editor: any) => void
 }
 
-export default function Editor({ content, onUpdate, minimal = false }: EditorProps) {
+export default function Editor({ content, onUpdate, minimal = false, onEditorReady }: EditorProps) {
   const [mounted, setMounted] = useState(false)
   const [cursorPosition, setCursorPosition] = useState({ top: 0, left: 0 })
   const [showAIIcon, setShowAIIcon] = useState(false)
@@ -123,6 +128,15 @@ export default function Editor({ content, onUpdate, minimal = false }: EditorPro
           id: spacerIdRef.current,
         }
       }),
+      // Add document properties node extension
+      DocumentPropertiesNode.configure({
+        onTagsUpdated: (tags) => {
+          console.log('Document tags updated:', tags);
+        },
+        onPropertiesUpdated: (properties) => {
+          console.log('Document properties updated:', properties);
+        }
+      }),
       TaggingExtension.configure({
         defaultTags,
         onTagApplied: (tag: Tag, range: any) => {
@@ -131,6 +145,10 @@ export default function Editor({ content, onUpdate, minimal = false }: EditorPro
         onTagRemoved: (tagId: string, rangeId: string) => {
           console.log('Tag removed:', tagId, rangeId);
         },
+        // New callback for document tags
+        onDocumentTagsUpdated: (tags: Tag[]) => {
+          console.log('Document tags updated via tagging extension:', tags);
+        }
       }),
       CodeBlockLowlight.configure({
         lowlight,
@@ -242,6 +260,34 @@ export default function Editor({ content, onUpdate, minimal = false }: EditorPro
     },
   })
 
+  // Initialize document properties if new document
+  useEffect(() => {
+    if (editor && editor.isReady) {
+      // Check if document properties node already exists
+      let hasPropertiesNode = false;
+      
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'documentProperties') {
+          hasPropertiesNode = true;
+          return false; // Stop iteration
+        }
+        return true;
+      });
+      
+      // If no properties node exists, create one
+      if (!hasPropertiesNode) {
+        editor.commands.updateDocumentProperties({
+          title: '',
+          author: '',
+          tags: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          isExpanded: true,
+        });
+      }
+    }
+  }, [editor]);
+
   useEffect(() => {
     setMounted(true)
 
@@ -261,6 +307,13 @@ export default function Editor({ content, onUpdate, minimal = false }: EditorPro
       }
     }
   }, [])
+  
+  // Notify parent when editor is ready
+  useEffect(() => {
+    if (editor && onEditorReady) {
+      onEditorReady(editor)
+    }
+  }, [editor, onEditorReady])
 
   // Add a selection change handler to show AI icon on text selection
   useEffect(() => {

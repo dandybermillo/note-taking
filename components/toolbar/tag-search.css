@@ -1,0 +1,41 @@
+.tag-search .tag-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}
+
+.tag-search .result-item {
+  padding: 6px 8px;
+  margin: 2px 0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.tag-search .result-item:hover {
+  background-color: hsl(var(--muted) / 0.5);
+}
+
+.tag-search .tag-preview {
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag-search .tag-name {
+  font-size: 0.75rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.tag-search .preview-highlight {
+  background-color: hsla(var(--primary) / 0.1);
+  padding: 0 2px;
+  border-radius: 2px;
+}

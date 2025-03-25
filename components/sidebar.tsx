@@ -1,10 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { Note } from "@/types/note"
 import { PlusIcon, SearchIcon, FileTextIcon } from "lucide-react"
+import { TagSearch } from "@/components/toolbar/tag-search"
+import { DemoTagger } from "@/components/toolbar/demo-tagger"
+import { Separator } from "@/components/ui/separator"
 
 interface SidebarProps {
   notes: Note[]
@@ -12,9 +15,10 @@ interface SidebarProps {
   onSelectNote: (noteId: string) => void
   onCreateNote: () => void
   onUpdateNoteTitle: (id: string, title: string) => void
+  editor?: any // TipTap editor instance
 }
 
-export default function Sidebar({ notes, currentNoteId, onSelectNote, onCreateNote, onUpdateNoteTitle }: SidebarProps) {
+export default function Sidebar({ notes, currentNoteId, onSelectNote, onCreateNote, onUpdateNoteTitle, editor }: SidebarProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState("")
@@ -30,6 +34,61 @@ export default function Sidebar({ notes, currentNoteId, onSelectNote, onCreateNo
     if (editingNoteId && editTitle.trim()) {
       onUpdateNoteTitle(editingNoteId, editTitle)
       setEditingNoteId(null)
+    }
+  }
+
+  // Handle navigation to tagged content
+  const handleTagResultClick = (position: number, tagType?: string) => {
+    if (!editor) return;
+    
+    // Focus the editor
+    editor.commands.focus();
+    
+    // Check if this is a document tag result (position will be 0)
+    if (tagType === 'document') {
+      // For document tags, scroll to top and ensure properties panel is expanded
+      editor.commands.setTextSelection(0);
+      editor.commands.togglePropertiesPanelExpanded();
+      
+      // Find the scrollable container 
+      const dom = editor.view.dom;
+      let scrollContainer = dom.parentElement;
+      while (scrollContainer && getComputedStyle(scrollContainer).overflow !== 'auto') {
+        scrollContainer = scrollContainer.parentElement;
+      }
+      
+      // Scroll to top
+      if (scrollContainer) {
+        scrollContainer.scrollTop = 0;
+      }
+      
+      return;
+    }
+    
+    // For inline tags, navigate to the specific position
+    editor.commands.setTextSelection(position);
+    
+    // Scroll to the position
+    const view = editor.view;
+    const coords = view.coordsAtPos(position);
+    
+    if (coords) {
+      // Scroll the editor to show the position
+      const dom = view.dom;
+      const editorRect = dom.getBoundingClientRect();
+      
+      // Calculate where to scroll
+      const scrollTop = coords.top - editorRect.top - 100; // 100px offset for better visibility
+      
+      // Find the scrollable container (likely the editor's parent)
+      let scrollContainer = dom.parentElement;
+      while (scrollContainer && getComputedStyle(scrollContainer).overflow !== 'auto') {
+        scrollContainer = scrollContainer.parentElement;
+      }
+      
+      if (scrollContainer) {
+        scrollContainer.scrollTop += scrollTop;
+      }
     }
   }
 
@@ -52,6 +111,16 @@ export default function Sidebar({ notes, currentNoteId, onSelectNote, onCreateNo
           onChange={(e) => setSearchTerm(e.target.value)}
         />
       </div>
+      
+      {/* Tag Search Component */}
+      {editor && (
+        <>
+          <div className="flex justify-between items-center mb-3">
+            <TagSearch editor={editor} onResultClick={handleTagResultClick} />
+            <DemoTagger editor={editor} />
+          </div>
+        </>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {filteredNotes.map((note) => (
