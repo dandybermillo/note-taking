@@ -96,10 +96,17 @@ export const DocumentPropertiesView: React.FC<NodeViewProps> = ({
   // Format date for display
   const formatDate = (dateString: string) => {
     try {
+      // Check if date is valid before formatting
       const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        // If date is invalid, return current time
+        return new Date().toLocaleString();
+      }
       return date.toLocaleString();
     } catch (e) {
-      return 'Invalid date';
+      console.error('Error formatting date:', e);
+      // Return current time as fallback
+      return new Date().toLocaleString();
     }
   };
   
@@ -107,28 +114,71 @@ export const DocumentPropertiesView: React.FC<NodeViewProps> = ({
   const addTag = () => {
     if (!newTagName.trim()) return;
     
-    const newTag: DocumentTag = {
-      id: `doc-tag-${Date.now()}`,
-      name: newTagName.trim(),
-      color: selectedColor,
-    };
-    
-    updateAttributes({
-      tags: [...tags, newTag],
-      updatedAt: new Date().toISOString(),
-    });
-    
-    // Reset inputs
-    setNewTagName('');
-    setIsEditing(false);
+    try {
+      // Generate a unique ID that's not already in use
+      const timestamp = Date.now();
+      const tagId = `doc-tag-${timestamp}`;
+      
+      // Ensure uniqueness by checking existing tags
+      const existingIds = tags.map(tag => tag.id);
+      let uniqueId = tagId;
+      let counter = 1;
+      
+      while (existingIds.includes(uniqueId)) {
+        uniqueId = `${tagId}-${counter}`;
+        counter++;
+      }
+      
+      const newTag: DocumentTag = {
+        id: uniqueId,
+        name: newTagName.trim().substring(0, 50), // Limit name length
+        color: selectedColor,
+      };
+      
+      // Check for duplicate tag names
+      const isDuplicate = tags.some(tag => 
+        tag.name.toLowerCase() === newTag.name.toLowerCase()
+      );
+      
+      if (isDuplicate) {
+        // Append a number to make it unique
+        newTag.name = `${newTag.name} (${counter})`;
+      }
+      
+      updateAttributes({
+        tags: [...tags, newTag],
+        updatedAt: new Date().toISOString(),
+      });
+      
+      // Reset inputs
+      setNewTagName('');
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Error adding tag:', error);
+      // Show an error message to the user
+      alert('There was an error adding the tag. Please try again.');
+    }
   };
   
   // Remove a document tag
   const removeTag = (tagId: string) => {
-    updateAttributes({
-      tags: tags.filter((tag: DocumentTag) => tag.id !== tagId),
-      updatedAt: new Date().toISOString(),
-    });
+    try {
+      // Verify the tag exists
+      const tagExists = tags.some(tag => tag.id === tagId);
+      
+      if (!tagExists) {
+        console.warn(`Attempted to remove non-existent tag with ID: ${tagId}`);
+        return;
+      }
+      
+      // Filter out the tag and update
+      updateAttributes({
+        tags: tags.filter((tag: DocumentTag) => tag.id !== tagId),
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Error removing tag:', error);
+    }
   };
   
   // Handle key press events for tag input

@@ -1,7 +1,23 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { TagIcon, SearchIcon, XIcon, FileTextIcon } from 'lucide-react'
+
+// Utility function for debouncing
+function debounce(func: Function, wait: number) {
+  let timeout: NodeJS.Timeout;
+  
+  const debounced = function(this: any, ...args: any[]) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+  
+  debounced.cancel = function() {
+    clearTimeout(timeout);
+  };
+  
+  return debounced;
+}
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tag, TagType, TagSearchResult } from "@/lib/extensions/tagging/tag-types"
@@ -41,99 +57,173 @@ export function TagSearch({ editor, onResultClick }: TagSearchProps) {
 
   }, [editor])
 
+  // Use debounced search to improve performance
+  const debouncedSearch = useCallback(
+    debounce(() => {
+      if (!editor) return;
+      performSearch();
+    }, 250), // 250ms debounce
+    [editor, selectedTags, tagTypeFilter]
+  );
+  
   // Update search results when query or selected tags change
   useEffect(() => {
-    if (!editor) return
-    performSearch()
-  }, [searchQuery, selectedTags, tagTypeFilter, editor])
+    debouncedSearch();
+    
+    // Clean up debounce on unmount
+    return () => {
+      debouncedSearch.cancel();
+    };
+  }, [searchQuery, selectedTags, tagTypeFilter, debouncedSearch]);
 
   const performSearch = () => {
-    if (!editor) return
+    if (!editor) return;
 
-    const taggingState = editor.storage.tagging
-    if (!taggingState) return
+    try {
+      const taggingState = editor.storage.tagging;
+      if (!taggingState) return;
 
-    const { tags, taggedRanges } = taggingState
-    const results: TagSearchResult[] = []
-
-    // Get document content as string for previews
-    const docContent = editor.state.doc.textContent
-
-    // First add document-level tags if not filtering by inline only
-    if (tagTypeFilter !== TagType.Inline) {
-      // Get document-level tags (those marked with isDocumentTag flag)
-      const documentTags = Object.values(tags).filter(tag => tag.isDocumentTag)
+      const { tags, taggedRanges } = taggingState;
+      const results: TagSearchResult[] = [];
       
-      documentTags.forEach((tag: any) => {
-        // Skip if we have selected tags and this tag is not in the selection
-        if (selectedTags.length > 0 && !selectedTags.includes(tag.id)) {
-          return
-        }
+      // Get search query in lowercase once for performance
+      const lowerQuery = searchQuery.toLowerCase();
+      const hasQuery = !!searchQuery.trim();
+      const hasTagFilter = selectedTags.length > 0;
 
-        // Skip if we have a search query and it doesn't match tag name
-        if (searchQuery && !tag.name.toLowerCase().includes(searchQuery.toLowerCase())) {
-          return
-        }
+      // Create a Set of selected tag IDs for faster lookup
+      const selectedTagSet = new Set(selectedTags);
 
-        // Add result for document tag
-        results.push({
-          id: `doc-${tag.id}`,
-          tag,
-          type: TagType.Document,
-          documentId: 'current' // We're only searching the current document
-        })
-      })
-    }
+      // Process document content only if needed for inline tag search
+      let docContent = '';
+      if (tagTypeFilter !== TagType.Document && 
+          (!hasTagFilter || Object.values(taggedRanges).some(range => 
+            !hasTagFilter || selectedTagSet.has((range as any).tagId)))) {
+        docContent = editor.state.doc.textContent;
+      }
 
-    // Then add inline tags if not filtering by document only
-    if (tagTypeFilter !== TagType.Document) {
-      // Filter ranges based on selected tags and search query
-      Object.values(taggedRanges).forEach((range: any) => {
-        const tag = tags[range.tagId]
-        
-        if (!tag || tag.isDocumentTag) return
-
-        // Skip if we have selected tags and this tag is not in the selection
-        if (selectedTags.length > 0 && !selectedTags.includes(tag.id)) {
-          return
-        }
-
-        // Skip if we have a search query and it doesn't match tag name or content
-        if (searchQuery) {
-          const lowerQuery = searchQuery.toLowerCase()
-          const tagMatches = tag.name.toLowerCase().includes(lowerQuery)
+      // First add document-level tags if not filtering by inline only
+      if (tagTypeFilter !== TagType.Inline) {
+        // Get document-level tags (those marked with isDocumentTag flag) - use a single filter operation
+        const documentTags = Object.values(tags).filter(tag => {
+          if (!tag.isDocumentTag) return false;
           
-          // Get content for this range
-          const rangeContent = docContent.substring(range.start, range.end).toLowerCase()
-          const contentMatches = rangeContent.includes(lowerQuery)
+          // Apply tag selection filter
+          if (hasTagFilter && !selectedTagSet.has(tag.id)) return false;
           
-          if (!tagMatches && !contentMatches) return
-        }
-
-        // Extract preview text (up to 50 chars)
-        const start = Math.max(0, range.start - 25)
-        const end = Math.min(docContent.length, range.end + 25)
-        let preview = docContent.substring(start, end)
+          // Apply search query filter
+          if (hasQuery && !tag.name.toLowerCase().includes(lowerQuery)) return false;
+          
+          return true;
+        });
         
-        // Add ellipsis if needed
-        if (start > 0) preview = "..." + preview
-        if (end < docContent.length) preview = preview + "..."
+        // Map filtered tags to results
+        documentTags.forEach((tag: any) => {
+          results.push({
+            id: `doc-${tag.id}`,
+            tag,
+            type: TagType.Document,
+            documentId: 'current' // We're only searching the current document
+          });
+        });
+      }
 
-        // Add result for inline tag
-        results.push({
-          id: `${range.id}-${tag.id}`,
-          tag,
-          type: TagType.Inline,
-          rangeId: range.id,
-          start: range.start,
-          end: range.end,
-          content: preview
-        })
-      })
+      // Then add inline tags if not filtering by document only
+      if (tagTypeFilter !== TagType.Document) {
+        // Create a Map of all ranges by tagId for better performance
+        const rangesByTagId: Record<string, any[]> = {};
+        
+        // Pre-filter ranges by selected tags for performance
+        Object.values(taggedRanges).forEach((range: any) => {
+          const tag = tags[range.tagId];
+          
+          if (!tag || tag.isDocumentTag) return;
+          if (hasTagFilter && !selectedTagSet.has(tag.id)) return;
+          
+          if (!rangesByTagId[tag.id]) {
+            rangesByTagId[tag.id] = [];
+          }
+          
+          rangesByTagId[tag.id].push(range);
+        });
+        
+        // Process each tag and its ranges
+        Object.entries(rangesByTagId).forEach(([tagId, ranges]) => {
+          const tag = tags[tagId];
+          
+          // Skip if tag doesn't match search query
+          if (hasQuery && !tag.name.toLowerCase().includes(lowerQuery)) {
+            // Check content only if tag name doesn't match
+            ranges.forEach(range => {
+              // Only extract content for ranges that might match
+              const rangeContent = docContent.substring(range.start, range.end).toLowerCase();
+              
+              if (!rangeContent.includes(lowerQuery)) return;
+              
+              // If content matches, create a preview
+              const start = Math.max(0, range.start - 25);
+              const end = Math.min(docContent.length, range.end + 25);
+              let preview = docContent.substring(start, end);
+              
+              // Add ellipsis if needed
+              if (start > 0) preview = "..." + preview;
+              if (end < docContent.length) preview = preview + "...";
+              
+              // Add result for inline tag
+              results.push({
+                id: `${range.id}-${tag.id}`,
+                tag,
+                type: TagType.Inline,
+                rangeId: range.id,
+                start: range.start,
+                end: range.end,
+                content: preview
+              });
+            });
+          } else {
+            // If no query or tag name matches, add all ranges
+            ranges.forEach(range => {
+              // Create preview
+              const start = Math.max(0, range.start - 25);
+              const end = Math.min(docContent.length, range.end + 25);
+              let preview = docContent.substring(start, end);
+              
+              // Add ellipsis if needed
+              if (start > 0) preview = "..." + preview;
+              if (end < docContent.length) preview = preview + "...";
+              
+              // Add result for inline tag
+              results.push({
+                id: `${range.id}-${tag.id}`,
+                tag,
+                type: TagType.Inline,
+                rangeId: range.id,
+                start: range.start,
+                end: range.end,
+                content: preview
+              });
+            });
+          }
+        });
+      }
+
+      // Sort results - document tags first, then by tag name
+      results.sort((a, b) => {
+        // Document tags come first
+        if (a.type !== b.type) {
+          return a.type === TagType.Document ? -1 : 1;
+        }
+        
+        // Sort by tag name
+        return a.tag.name.localeCompare(b.tag.name);
+      });
+
+      setResults(results);
+    } catch (error) {
+      console.error('Error in tag search:', error);
+      setResults([]);
     }
-
-    setResults(results)
-  }
+  };
 
   const handleTagSelection = (tagId: string) => {
     setSelectedTags(prev => 

@@ -19,6 +19,22 @@ import Highlight from "@tiptap/extension-highlight"
 import TextStyle from "@tiptap/extension-text-style"
 import Color from "@tiptap/extension-color"
 import { useEffect, useState, useRef, useCallback } from "react"
+
+// Utility function for debouncing
+function debounce(func: Function, wait: number) {
+  let timeout: NodeJS.Timeout;
+  
+  const debounced = function(this: any, ...args: any[]) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+  
+  debounced.cancel = function() {
+    clearTimeout(timeout);
+  };
+  
+  return debounced;
+}
 import { BotIcon, XIcon, TagIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -276,8 +292,19 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
       
       // If no properties node exists, create one
       if (!hasPropertiesNode) {
+        // Extract title from first heading if available
+        let autoTitle = '';
+        
+        editor.state.doc.descendants((node, pos) => {
+          if (node.type.name === 'heading' && node.attrs.level === 1) {
+            autoTitle = node.textContent;
+            return false; // Stop after finding the first h1
+          }
+          return true;
+        });
+        
         editor.commands.updateDocumentProperties({
-          title: '',
+          title: autoTitle,
           author: '',
           tags: [],
           createdAt: new Date().toISOString(),
@@ -286,6 +313,68 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
         });
       }
     }
+  }, [editor]);
+  
+  // Synchronize document title on content changes
+  useEffect(() => {
+    if (!editor) return;
+    
+    // Create a synchronization function
+    const syncDocumentTitle = () => {
+      // Only proceed if document has changed
+      if (!editor.isEditable) return;
+      
+      // Extract the first H1 heading as potential title
+      let firstHeadingText = '';
+      
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'heading' && node.attrs.level === 1) {
+          firstHeadingText = node.textContent;
+          return false; // Stop after finding the first h1
+        }
+        return true;
+      });
+      
+      // Update document properties if first heading exists and has changed
+      if (firstHeadingText) {
+        let documentProperties = null;
+        
+        // Find document properties node
+        editor.state.doc.descendants((node, pos) => {
+          if (node.type.name === 'documentProperties') {
+            documentProperties = node;
+            return false; // Stop iteration
+          }
+          return true;
+        });
+        
+        // Update title only if it's not already set manually
+        if (documentProperties && !documentProperties.attrs.title) {
+          editor.commands.updateDocumentProperties({
+            title: firstHeadingText,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+    };
+    
+    // Debounce the sync to avoid too many updates
+    const debouncedSync = debounce(syncDocumentTitle, 1000);
+    
+    // Create a transaction handler
+    const handler = editor.on('update', ({ editor, transaction }) => {
+      if (transaction.docChanged) {
+        debouncedSync();
+      }
+    });
+    
+    // Initial sync
+    syncDocumentTitle();
+    
+    // Cleanup
+    return () => {
+      handler();
+    };
   }, [editor]);
 
   useEffect(() => {
