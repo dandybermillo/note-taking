@@ -47,6 +47,7 @@ import { Tag, TagType } from "@/lib/extensions/tagging/tag-types"
 
 // Import document properties extension
 import { DocumentPropertiesNode } from "@/lib/extensions/document-properties"
+import { forceDocumentPropertiesInitialization } from "@/lib/extensions/document-properties/force-initialization"
 import "@/lib/extensions/document-properties/document-properties.css"
 
 // Import AI icon component
@@ -276,42 +277,190 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     },
   })
 
-  // Initialize document properties if new document
+  // Import the force initialization utility
+  import { forceDocumentPropertiesInitialization } from '@/lib/extensions/document-properties/force-initialization';
+  
+  // Initialize document properties right after editor is ready
   useEffect(() => {
     if (editor && editor.isReady) {
-      // Check if document properties node already exists
-      let hasPropertiesNode = false;
+      console.log("Editor is ready, initializing document properties");
       
-      editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === 'documentProperties') {
-          hasPropertiesNode = true;
-          return false; // Stop iteration
-        }
-        return true;
-      });
-      
-      // If no properties node exists, create one
-      if (!hasPropertiesNode) {
-        // Extract title from first heading if available
-        let autoTitle = '';
+      // First attempt: Use a direct transaction approach for more reliable initialization
+      const initializeProperties = () => {
+        // Check if document properties node already exists
+        let hasPropertiesNode = false;
         
         editor.state.doc.descendants((node, pos) => {
-          if (node.type.name === 'heading' && node.attrs.level === 1) {
-            autoTitle = node.textContent;
-            return false; // Stop after finding the first h1
+          if (node.type.name === 'documentProperties') {
+            hasPropertiesNode = true;
+            console.log("Found existing properties node:", node.attrs);
+            return false; // Stop iteration
           }
           return true;
         });
         
-        editor.commands.updateDocumentProperties({
-          title: autoTitle,
-          author: '',
-          tags: [],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          isExpanded: true,
+        // If no properties node exists, create one
+        if (!hasPropertiesNode) {
+          console.log("No properties node found, creating one");
+          
+          // Extract title from first heading if available
+          let autoTitle = '';
+          
+          editor.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'heading' && node.attrs.level === 1) {
+              autoTitle = node.textContent;
+              return false; // Stop after finding the first h1
+            }
+            return true;
+          });
+          
+          try {
+            // Create properties node using direct transaction for more reliable insertion
+            const tr = editor.state.tr;
+            const node = editor.schema.nodes.documentProperties.create({
+              title: autoTitle,
+              author: '',
+              tags: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              isExpanded: true
+            });
+            
+            tr.insert(0, node);
+            editor.view.dispatch(tr);
+            
+            console.log("Document properties node created via direct transaction");
+            
+            // Verify creation
+            setTimeout(verifyPropertiesNode, 50);
+          } catch (error) {
+            console.error("Error creating properties node with transaction:", error);
+            
+            // Fallback to command method
+            try {
+              editor.commands.updateDocumentProperties({
+                title: autoTitle,
+                author: '',
+                tags: [],
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                isExpanded: true,
+              });
+              
+              console.log("Document properties node created via command");
+              
+              // Verify creation
+              setTimeout(verifyPropertiesNode, 50);
+            } catch (cmdError) {
+              console.error("Error creating properties with command:", cmdError);
+              
+              // Final fallback - use the force initialization utility
+              setTimeout(() => {
+                forceDocumentPropertiesInitialization(editor);
+                
+                // Verify one last time
+                setTimeout(verifyPropertiesNode, 100);
+              }, 100);
+            }
+          }
+        }
+      };
+      
+      // Helper function to verify properties node exists
+      const verifyPropertiesNode = () => {
+        let created = false;
+        editor.state.doc.descendants((node, pos) => {
+          if (node.type.name === 'documentProperties') {
+            created = true;
+            console.log("Verified properties node creation at pos:", pos);
+            return false;
+          }
+          return true;
         });
-      }
+        
+        if (!created) {
+          console.error("Failed to verify properties node creation, trying force method");
+          forceDocumentPropertiesInitialization(editor);
+        }
+      };
+      
+      // Wait for editor to be fully initialized before creating the properties node
+      setTimeout(initializeProperties, 100);
+      
+      // Define a function for the transaction handler
+      const handleDocumentPropertiesCheck = () => {
+        // Check if properties node exists after each transaction
+        let hasPropertiesNode = false;
+        let isFirstNode = false;
+        
+        if (editor.state.doc.content.size > 0) {
+          editor.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'documentProperties') {
+              hasPropertiesNode = true;
+              // Check if it's the first node in the document
+              isFirstNode = pos === 0;
+              return false; // Stop iteration
+            }
+            
+            // If we've checked the first node and it's not properties, stop
+            if (pos === 0) {
+              return false; // Not the first node, no need to check more
+            }
+            
+            return true;
+          });
+          
+          // If properties node doesn't exist, or it's not the first node, recreate it
+          if (!hasPropertiesNode) {
+            // Don't log to avoid console spam
+            forceDocumentPropertiesInitialization(editor);
+          } else if (!isFirstNode) {
+            // Properties exists but is not the first node
+            // This is a complex case, we should move it to the top
+            try {
+              // First find the current properties node
+              let propertiesNode = null;
+              let propertiesPos = -1;
+              
+              editor.state.doc.descendants((node, pos) => {
+                if (node.type.name === 'documentProperties') {
+                  propertiesNode = node;
+                  propertiesPos = pos;
+                  return false; // Stop iteration
+                }
+                return true;
+              });
+              
+              if (propertiesNode && propertiesPos !== 0) {
+                // Delete it from current position
+                let tr = editor.state.tr.delete(
+                  propertiesPos, 
+                  propertiesPos + propertiesNode.nodeSize
+                );
+                
+                // Create a new one at the beginning
+                const newNode = editor.schema.nodes.documentProperties.create(propertiesNode.attrs);
+                tr = tr.insert(0, newNode);
+                
+                // Apply the changes
+                editor.view.dispatch(tr);
+              }
+            } catch (error) {
+              // Silent error to avoid console spam
+            }
+          }
+        }
+      };
+      
+      // Add a transaction handler to ensure properties node always exists
+      editor.on('transaction', handleDocumentPropertiesCheck);
+      
+      // Cleanup function
+      return () => {
+        if (editor && editor.off) {
+          editor.off('transaction', handleDocumentPropertiesCheck);
+        }
+      };
     }
   }, [editor]);
   
