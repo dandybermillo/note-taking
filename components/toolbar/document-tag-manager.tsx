@@ -10,6 +10,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { DocumentTag } from '@/lib/extensions/document-properties/document-properties-types'
+import './document-tag-manager.css'
 
 interface DocumentTagManagerProps {
   editor: any // TipTap editor instance
@@ -20,6 +21,7 @@ export function DocumentTagManager({ editor }: DocumentTagManagerProps) {
   const [newTagName, setNewTagName] = useState('')
   const [selectedColor, setSelectedColor] = useState('#4f46e5') // Default indigo color
   const [showColorPicker, setShowColorPicker] = useState(false)
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false)
   
   // Available colors (same as inline tag colors for consistency)
   const colors = [
@@ -90,8 +92,17 @@ export function DocumentTagManager({ editor }: DocumentTagManagerProps) {
     // Add tag to the document properties
     editor.commands.addDocumentTag(newTag)
     
-    // Reset input
+    // Reset input and give visual feedback
     setNewTagName('')
+    
+    // Flash the tag count to indicate success
+    const tagCountEl = document.querySelector('.document-tag-count');
+    if (tagCountEl) {
+      tagCountEl.classList.add('tag-added-flash');
+      setTimeout(() => {
+        tagCountEl.classList.remove('tag-added-flash');
+      }, 1000);
+    }
   }
 
   // Remove a document tag
@@ -125,29 +136,32 @@ export function DocumentTagManager({ editor }: DocumentTagManagerProps) {
         className="text-xs gap-1"
         onClick={togglePropertiesPanel}
         title="Toggle properties panel"
+        aria-label="Toggle properties panel"
       >
         <Settings2 className="h-3.5 w-3.5" />
         <span>Properties</span>
       </Button>
       
-      <Popover>
+      <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
         <PopoverTrigger asChild>
           <Button 
-            variant="outline" 
+            variant={documentTags.length > 0 ? "default" : "outline"}
             size="sm" 
-            className="text-xs gap-1"
+            className={`text-xs gap-1 transition-all duration-300 ${documentTags.length > 0 ? 'bg-primary/20 hover:bg-primary/30 text-primary hover:text-primary' : ''}`}
             title="Manage document tags"
+            aria-label="Manage document tags"
+            aria-expanded={isPopoverOpen}
           >
             <TagIcon className="h-3.5 w-3.5" />
             <span>Document Tags</span>
             {documentTags.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 bg-primary/10 text-primary rounded-full text-[10px]">
+              <span className="document-tag-count ml-1 px-1.5 py-0.5 bg-primary/20 text-primary rounded-full text-[10px] transition-all">
                 {documentTags.length}
               </span>
             )}
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-80 p-3" align="end">
+        <PopoverContent className="w-80 p-3" align="end" side="bottom" sideOffset={5}>
           <div className="space-y-3">
             <h3 className="text-sm font-medium">Document Tags</h3>
             
@@ -161,6 +175,8 @@ export function DocumentTagManager({ editor }: DocumentTagManagerProps) {
                   onChange={(e) => setNewTagName(e.target.value)}
                   onKeyDown={handleKeyDown}
                   className="w-full h-8 px-3 text-sm border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-ring"
+                  aria-label="New tag name"
+                  id="new-tag-input"
                 />
               </div>
               
@@ -169,6 +185,9 @@ export function DocumentTagManager({ editor }: DocumentTagManagerProps) {
                   className="h-8 w-8 flex items-center justify-center border border-input rounded-md"
                   onClick={() => setShowColorPicker(!showColorPicker)}
                   style={{ backgroundColor: selectedColor + '15' }}
+                  aria-label="Select tag color"
+                  aria-haspopup="true"
+                  aria-expanded={showColorPicker}
                 >
                   <div
                     className="h-4 w-4 rounded-full"
@@ -181,12 +200,14 @@ export function DocumentTagManager({ editor }: DocumentTagManagerProps) {
                     {colors.map((color) => (
                       <button
                         key={color}
-                        className="h-4 w-4 rounded-full hover:opacity-90 transition-opacity"
+                        className="h-4 w-4 rounded-full hover:opacity-90 transition-opacity hover:scale-110"
                         style={{ backgroundColor: color }}
                         onClick={() => {
                           setSelectedColor(color);
                           setShowColorPicker(false);
                         }}
+                        aria-label={`Select color ${color}`}
+                        title={`Select color ${color}`}
                       ></button>
                     ))}
                   </div>
@@ -210,32 +231,36 @@ export function DocumentTagManager({ editor }: DocumentTagManagerProps) {
                 {documentTags.map((tag) => (
                   <div
                     key={tag.id}
-                    className="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md"
-                    style={{ backgroundColor: tag.color + '15' }}
+                    className="document-tag-chip flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-all hover:shadow-sm"
+                    style={{ backgroundColor: tag.color + '15', borderLeft: `2px solid ${tag.color}` }}
                   >
                     <div
-                      className="h-2.5 w-2.5 rounded-full"
+                      className="h-2.5 w-2.5 rounded-full transition-transform"
                       style={{ backgroundColor: tag.color }}
                     ></div>
                     <span>{tag.name}</span>
                     <button
-                      className="ml-1 text-muted-foreground hover:text-foreground"
+                      className="ml-1 text-muted-foreground hover:text-foreground hover:bg-muted/30 rounded-full p-0.5 transition-colors"
                       onClick={() => removeDocumentTag(tag.id)}
+                      aria-label={`Remove tag ${tag.name}`}
+                      title={`Remove tag ${tag.name}`}
                     >
                       <svg 
                         xmlns="http://www.w3.org/2000/svg" 
-                        width="12" 
-                        height="12" 
+                        width="10" 
+                        height="10" 
                         viewBox="0 0 24 24" 
                         fill="none" 
                         stroke="currentColor" 
                         strokeWidth="2" 
                         strokeLinecap="round" 
                         strokeLinejoin="round"
+                        aria-hidden="true"
                       >
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
                       </svg>
+                      <span className="sr-only">Remove tag {tag.name}</span>
                     </button>
                   </div>
                 ))}

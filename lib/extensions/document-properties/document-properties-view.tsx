@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { NodeViewProps, NodeViewWrapper } from '@tiptap/react';
-import { ChevronDown, ChevronRight, Tag as TagIcon, PlusCircle, X } from 'lucide-react';
+import { 
+  ChevronDown, 
+  ChevronRight, 
+  Tag as TagIcon, 
+  PlusCircle, 
+  X, 
+  FileText, 
+  Calendar, 
+  User,
+  Info
+} from 'lucide-react';
 import { DocumentTag } from './document-properties-types';
 import './document-properties.css';
 
@@ -9,9 +19,20 @@ export const DocumentPropertiesView: React.FC<NodeViewProps> = ({
   updateAttributes,
   editor,
 }) => {
-  const { tags = [], isExpanded = true, title = '', author = '' } = node.attrs;
+  const { 
+    tags = [], 
+    isExpanded = true, 
+    title = '', 
+    author = '',
+    createdAt = new Date().toISOString(),
+    updatedAt = new Date().toISOString()
+  } = node.attrs;
+  
   const [isEditing, setIsEditing] = useState(false);
+  const [editingField, setEditingField] = useState<string | null>(null);
   const [newTagName, setNewTagName] = useState('');
+  const [titleInput, setTitleInput] = useState(title);
+  const [authorInput, setAuthorInput] = useState(author);
   const [selectedColor, setSelectedColor] = useState('#4f46e5'); // Default indigo color
   const [showColorPicker, setShowColorPicker] = useState(false);
   
@@ -43,6 +64,43 @@ export const DocumentPropertiesView: React.FC<NodeViewProps> = ({
   // Toggle panel expanded/collapsed state
   const toggleExpanded = () => {
     updateAttributes({ isExpanded: !isExpanded });
+  };
+  
+  // Start editing a specific field
+  const startEditing = (field: string) => {
+    setEditingField(field);
+    if (field === 'title') {
+      setTitleInput(title);
+    } else if (field === 'author') {
+      setAuthorInput(author);
+    }
+  };
+  
+  // Save field value
+  const saveField = () => {
+    if (editingField === 'title') {
+      updateAttributes({ 
+        title: titleInput,
+        updatedAt: new Date().toISOString()
+      });
+    } else if (editingField === 'author') {
+      updateAttributes({ 
+        author: authorInput,
+        updatedAt: new Date().toISOString()
+      });
+    }
+    
+    setEditingField(null);
+  };
+  
+  // Format date for display
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString();
+    } catch (e) {
+      return 'Invalid date';
+    }
   };
   
   // Add a new document tag
@@ -110,6 +168,16 @@ export const DocumentPropertiesView: React.FC<NodeViewProps> = ({
         <div 
           className="document-properties-header" 
           onClick={() => !isEditing && toggleExpanded()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              !isEditing && toggleExpanded();
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          aria-expanded={isExpanded}
+          aria-label="Toggle document properties panel"
         >
           <div className="flex items-center">
             {isExpanded ? 
@@ -119,19 +187,111 @@ export const DocumentPropertiesView: React.FC<NodeViewProps> = ({
             <span className="text-sm font-medium ml-1">Document Properties</span>
           </div>
           
-          {/* Tag count badge */}
-          {tags.length > 0 && (
-            <div className="tag-badge" onClick={e => e.stopPropagation()}>
-              <TagIcon className="h-3 w-3" />
-              <span>{tags.length}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Title preview if set */}
+            {title && !isExpanded && (
+              <div className="title-preview">
+                {title}
+              </div>
+            )}
+            
+            {/* Tag count badge */}
+            {tags.length > 0 && (
+              <div className="tag-badge" onClick={e => e.stopPropagation()}>
+                <TagIcon className="h-3 w-3" />
+                <span>{tags.length}</span>
+              </div>
+            )}
+          </div>
         </div>
         
         {isExpanded && (
           <div className="document-properties-content">
+            {/* Document title */}
+            <div className="property-section">
+              <div className="section-header">
+                <FileText className="h-3.5 w-3.5" />
+                <span>Title</span>
+              </div>
+              
+              <div className="property-value">
+                {editingField === 'title' ? (
+                  <div className="edit-field-container">
+                    <input
+                      type="text"
+                      value={titleInput}
+                      onChange={e => setTitleInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveField()}
+                      onBlur={saveField}
+                      placeholder="Enter document title..."
+                      autoFocus
+                      className="property-input"
+                    />
+                  </div>
+                ) : (
+                  <div 
+                    className="editable-value"
+                    onClick={() => startEditing('title')}
+                  >
+                    {title || <span className="placeholder-text">Add a title...</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Author field */}
+            <div className="property-section">
+              <div className="section-header">
+                <User className="h-3.5 w-3.5" />
+                <span>Author</span>
+              </div>
+              
+              <div className="property-value">
+                {editingField === 'author' ? (
+                  <div className="edit-field-container">
+                    <input
+                      type="text"
+                      value={authorInput}
+                      onChange={e => setAuthorInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveField()}
+                      onBlur={saveField}
+                      placeholder="Enter author name..."
+                      autoFocus
+                      className="property-input"
+                    />
+                  </div>
+                ) : (
+                  <div 
+                    className="editable-value"
+                    onClick={() => startEditing('author')}
+                  >
+                    {author || <span className="placeholder-text">Add an author...</span>}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Date information */}
+            <div className="property-section">
+              <div className="section-header">
+                <Calendar className="h-3.5 w-3.5" />
+                <span>Dates</span>
+              </div>
+              
+              <div className="dates-container">
+                <div className="date-item">
+                  <span className="date-label">Created:</span>
+                  <span className="date-value">{formatDate(createdAt)}</span>
+                </div>
+                <div className="date-item">
+                  <span className="date-label">Updated:</span>
+                  <span className="date-value">{formatDate(updatedAt)}</span>
+                </div>
+              </div>
+            </div>
+            
             {/* Tag list */}
-            <div className="document-tags-section">
+            <div className="property-section">
               <div className="section-header">
                 <TagIcon className="h-3.5 w-3.5" />
                 <span>Tags</span>
@@ -154,9 +314,11 @@ export const DocumentPropertiesView: React.FC<NodeViewProps> = ({
                         <button
                           className="remove-tag"
                           onClick={() => removeTag(tag.id)}
-                          title="Remove tag"
+                          title={`Remove tag "${tag.name}"`}
+                          aria-label={`Remove tag "${tag.name}"`}
                         >
                           <X className="h-3 w-3" />
+                          <span className="sr-only">Remove tag {tag.name}</span>
                         </button>
                       </div>
                     ))}
@@ -183,11 +345,15 @@ export const DocumentPropertiesView: React.FC<NodeViewProps> = ({
                           className="color-button"
                           onClick={() => setShowColorPicker(!showColorPicker)}
                           style={{ backgroundColor: `${selectedColor}15` }}
+                          aria-label="Select tag color"
+                          aria-expanded={showColorPicker}
+                          aria-haspopup="true"
                         >
                           <div
                             className="color-preview"
                             style={{ backgroundColor: selectedColor }}
                           />
+                          <span className="sr-only">Choose color</span>
                         </button>
                         
                         {showColorPicker && (
@@ -201,6 +367,8 @@ export const DocumentPropertiesView: React.FC<NodeViewProps> = ({
                                   setSelectedColor(color);
                                   setShowColorPicker(false);
                                 }}
+                                aria-label={`Select color ${color}`}
+                                title={`Select color ${color}`}
                               />
                             ))}
                           </div>
@@ -238,8 +406,6 @@ export const DocumentPropertiesView: React.FC<NodeViewProps> = ({
                 )}
               </div>
             </div>
-            
-            {/* We could add more properties sections here in future phases */}
           </div>
         )}
       </div>

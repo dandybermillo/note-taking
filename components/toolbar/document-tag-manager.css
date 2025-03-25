@@ -1,0 +1,78 @@
+/* Document tag manager animations and styles */
+
+.document-tag-count {
+  transition: all 0.3s ease;
+}
+
+.tag-added-flash {
+  animation: tag-added-pulse 1s ease-in-out;
+}
+
+@keyframes tag-added-pulse {
+  0% {
+    transform: scale(1);
+    background-color: rgba(var(--primary-rgb), 0.2);
+  }
+  50% {
+    transform: scale(1.3);
+    background-color: rgba(var(--primary-rgb), 0.5);
+  }
+  100% {
+    transform: scale(1);
+    background-color: rgba(var(--primary-rgb), 0.2);
+  }
+}
+
+/* Tag appearance animation */
+.document-tag-chip {
+  animation: tag-appear 0.3s ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes tag-appear {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hover effects */
+.document-tag-chip:hover {
+  transform: translateY(-1px);
+}
+
+.document-tag-chip:hover::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+
+/* Add a subtle ripple effect when tag is clicked */
+.document-tag-chip:active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(var(--primary-rgb), 0.3) 0%, rgba(var(--primary-rgb), 0) 70%);
+  pointer-events: none;
+  animation: ripple 0.6s linear;
+}
+
+@keyframes ripple {
+  to {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
