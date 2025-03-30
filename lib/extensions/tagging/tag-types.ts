@@ -8,6 +8,11 @@ export interface Tag {
   isDocumentTag?: boolean;
 }
 
+export enum TagType {
+  Document = 'document',
+  Inline = 'inline',
+}
+
 export interface TaggedRange {
   id: string;
   start: number;
@@ -18,20 +23,13 @@ export interface TaggedRange {
 export interface TaggingOptions {
   onTagApplied?: (tag: Tag, range: TaggedRange) => void;
   onTagRemoved?: (tagId: string, rangeId: string) => void;
-  defaultTags?: Tag[];
-  // New callback for handling document tags
   onDocumentTagsUpdated?: (tags: Tag[]) => void;
+  defaultTags?: Tag[];
 }
 
 export interface TaggingState {
   tags: Record<string, Tag>;
   taggedRanges: Record<string, TaggedRange>;
-}
-
-// Tag type enum for better readability when working with different tag types
-export enum TagType {
-  Inline = 'inline',
-  Document = 'document'
 }
 
 // Extended tag search result to include both inline and document tags

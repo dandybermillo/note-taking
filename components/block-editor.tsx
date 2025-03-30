@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight"
@@ -41,10 +40,6 @@ import { Input } from "@/components/ui/input"
 import { Node } from '@tiptap/core'
 import { createPortal } from 'react-dom'
 
-// Import tagging extension
-import { TaggingExtension, TaggingExtensionKey } from "@/lib/extensions/tagging/tagging-extension"
-import { Tag, TagType } from "@/lib/extensions/tagging/tag-types"
-
 // Import document properties extension
 import { DocumentPropertiesNode } from "@/lib/extensions/document-properties"
 import { forceDocumentPropertiesInitialization } from "@/lib/extensions/document-properties/force-initialization"
@@ -58,8 +53,23 @@ import { AIIcon } from "@/components/ai-icon/ai-icon"
 import "@/components/ai-icon/ai-icon.css"
 
 // Import TagInput component
-import { TagInput } from "@/components/toolbar/dynamic-tag-input"
+import { TagInput } from "@/components/toolbar/tag-input"
 import "@/components/toolbar/toolbar.css"
+
+// Import the new block-based tagging system
+import { BlockManager } from "@/lib/extensions/block-node"
+import { BlockAwareTaggingExtension } from "@/lib/extensions/tagging/block-aware-tagging-extension"
+import { TagShortcuts } from "@/lib/extensions/tag-shortcuts"
+import { 
+  useBlockInitialization, 
+  useDocumentTagsMap,
+  setCurrentDocumentId,
+  navigateToTag,
+  ensureWhitespacePreservation
+} from "@/lib/extensions/block-tagging-integration"
+
+// Import types
+import { Tag } from "@/lib/extensions/tagging/tag-types"
 
 const lowlight = createLowlight(common)
 
@@ -99,19 +109,20 @@ const AISpacerNode = Node.create({
   },
 })
 
-// Store outside component to persist across renders
-// This map stores tag information for each document to prevent tags from carrying over
-const documentTagsMap = new Map<string, any>();
+// Create the document tags map in global scope like in the original editor
+if (typeof window !== 'undefined' && !(window as any).documentTagsMap) {
+  (window as any).documentTagsMap = new Map();
+}
 
-interface EditorProps {
+interface BlockEditorProps {
   content: string
   onUpdate: (content: string) => void
   minimal?: boolean
   onEditorReady?: (editor: any) => void
-  documentId?: string // Add documentId prop
+  documentId?: string
 }
 
-export default function Editor({ content, onUpdate, minimal = false, onEditorReady, documentId }: EditorProps) {
+export default function BlockEditor({ content, onUpdate, minimal = false, onEditorReady, documentId }: BlockEditorProps) {
   const [mounted, setMounted] = useState(false)
   const [cursorPosition, setCursorPosition] = useState({ top: 0, left: 0 })
   const [showAIIcon, setShowAIIcon] = useState(false)
@@ -133,7 +144,16 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
   const [selectionRange, setSelectionRange] = useState<{from: number, to: number} | null>(null)
   const highlightedRangeRef = useRef<{from: number, to: number} | null>(null)
   const prevDocumentIdRef = useRef<string | undefined>(documentId)
-  const [isRestoringTags, setIsRestoringTags] = useState(false)
+  
+  // Set current document ID globally
+  useEffect(() => {
+    if (documentId) {
+      setCurrentDocumentId(documentId);
+    }
+  }, [documentId]);
+  
+  // Register document tags map
+  useDocumentTagsMap();
   
   // Add initial default tags
   const defaultTags: Tag[] = [
@@ -168,7 +188,8 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
           console.log('Document properties updated:', properties);
         }
       }),
-      TaggingExtension.configure({
+      // Replace TaggingExtension with BlockAwareTaggingExtension
+      BlockAwareTaggingExtension.configure({
         defaultTags,
         onTagApplied: (tag: Tag, range: any) => {
           console.log('Tag applied:', tag, range);
@@ -176,9 +197,35 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
         onTagRemoved: (tagId: string, rangeId: string) => {
           console.log('Tag removed:', tagId, rangeId);
         },
-        // New callback for document tags
         onDocumentTagsUpdated: (tags: Tag[]) => {
           console.log('Document tags updated via tagging extension:', tags);
+        }
+      }),
+      // Add BlockManager
+      BlockManager.configure({
+        onBlockCreated: (blockId, position) => {
+          console.log('Block created:', blockId, position);
+        },
+        onBlockDeleted: (blockId) => {
+          console.log('Block deleted:', blockId);
+        },
+        onBlockUpdated: (blockId, content, position) => {
+          console.log('Block updated:', blockId, content.slice(0, 30) + '...');
+        },
+        onBlockMoved: (blockId, oldPosition, newPosition) => {
+          console.log('Block moved:', blockId, 'from', oldPosition, 'to', newPosition);
+        }
+      }),
+      // Add TagShortcuts
+      TagShortcuts.configure({
+        shortcuts: {
+          'Alt-1': 'tag-1', // Important
+          'Alt-2': 'tag-2', // Todo
+          'Alt-3': 'tag-3', // Question
+          'Alt-4': 'tag-4', // Idea
+        },
+        onShortcutNotFound: (shortcut) => {
+          console.log(`No tag found for shortcut: ${shortcut}`);
         }
       }),
       // Add whitespace preservation extension
@@ -311,6 +358,16 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
       },
     },
   })
+
+  // Initialize document as blocks
+  useBlockInitialization(editor);
+  
+  // Ensure whitespace preservation works with blocks
+  useEffect(() => {
+    if (editor) {
+      ensureWhitespacePreservation(editor);
+    }
+  }, [editor]);
 
   // Initialize document properties right after editor is ready
   useEffect(() => {
@@ -753,18 +810,11 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     const start = view.coordsAtPos(from)
     const editorRect = editorRef.current.getBoundingClientRect()
 
-    // Position the popup above the cursor with a 50px offset
-    const top = start.top - editorRect.top - 50
+    const top = start.top - editorRect.top
     const left = start.left - editorRect.left
 
-    // Ensure the left position stays within the editor boundaries
-    const adjustedLeft = Math.min(
-      left,
-      editorRect.width - 300 // Assuming popup width ~300px
-    )
-
-    lastCursorPositionRef.current = { top, left: adjustedLeft }
-    setCursorPosition({ top, left: adjustedLeft })
+    lastCursorPositionRef.current = { top, left }
+    setCursorPosition({ top, left })
   }
 
   // Handle opening the tag input
@@ -781,8 +831,23 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     
     const { from, to } = selectionRange;
     
-    // Apply the tag to the selected text
+    // Apply the tag to the selected text using the block-aware tagging
     editor.commands.addTag(tag, from, to);
+    
+    // Explicitly save the tag data for the current document
+    if (documentId) {
+      console.log(`Saving tags after applying tag to document ${documentId}`);
+      const currentStorage = editor.storage.blockAwareTagging;
+      const tagData = {
+        tags: currentStorage.tags || {},
+        documentTags: currentStorage.documentTags || [],
+        tagMetadata: currentStorage.tagMetadata || {},
+        blockTags: currentStorage.blockTags || {}
+      };
+      
+      // Store in the global documentTagsMap
+      (window as any).documentTagsMap.set(documentId, tagData);
+    }
     
     // Close the tag input
     setShowTagInput(false);
@@ -810,7 +875,7 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
       
       // If there's a selection, highlight it before showing AI input
       if (!empty && selectionRange) {
-        // Apply highlight to the selected text with a lower z-index
+        // Apply highlight to the selected text
         editor.chain().setHighlight({
           from: selectionRange.from,
           to: selectionRange.to,
@@ -951,18 +1016,18 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     clearHighlights();
   
     // Remove the spacer node from the document
-      editor.chain()
-        .command(({ tr, state }) => {
+    editor.chain()
+      .command(({ tr, state }) => {
         const spacerPositions: { pos: number, nodeSize: number }[] = [];
-          
-          state.doc.descendants((node, pos) => {
-            if (node.type.name === 'aiSpacer') {
+        
+        state.doc.descendants((node, pos) => {
+          if (node.type.name === 'aiSpacer') {
             spacerPositions.push({ pos, nodeSize: node.nodeSize });
-            }
+          }
           return true;
         });
-          
-          spacerPositions.reverse().forEach(({ pos, nodeSize }) => {
+        
+        spacerPositions.reverse().forEach(({ pos, nodeSize }) => {
           tr.delete(pos, pos + nodeSize);
         });
         
@@ -1055,8 +1120,8 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
   }, [showAIInput, resizeTextarea]);
 
   // Get all existing tags from the editor storage
-  const existingTags = editor && editor.storage.tagging
-    ? Object.values(editor.storage.tagging.tags) as Tag[]
+  const existingTags = editor && editor.storage.blockAwareTagging
+    ? Object.values(editor.storage.blockAwareTagging.tags) as Tag[]
     : defaultTags;
 
   // Update your existing functions to handle the new textarea
@@ -1103,337 +1168,31 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     }
   };
 
-  // Function to save current document's tag state
+  // Function to save current document's tag state using the enhanced tagging extension
   const saveCurrentDocumentTags = useCallback((docId: string) => {
     if (!editor || !docId) return;
     
-    try {
-      // First, synchronize the tag metadata with the actual visual tags in the document
-      // This ensures we capture any tags that were added, moved or modified since last save
-      const updatedTagMetadata = { ...editor.storage.tagging.tagMetadata };
-      const foundTagIds = new Set<string>(); // Track which tags were found in the document
-      
-      // Scan the document to find all visible tag marks and update metadata accordingly
-      editor.state.doc.descendants((node, pos) => {
-        if (!node.isText || !node.marks.length) return true;
-        
-        // Look for tag marks on this node
-        const tagMarks = node.marks.filter(mark => mark.type.name === 'tag');
-        
-        for (const mark of tagMarks) {
-          const rangeId = mark.attrs.id;
-          const tagId = mark.attrs.tagId;
-          
-          if (rangeId && tagId) {
-            // Mark this tag as found in the document
-            foundTagIds.add(rangeId);
-            
-            // Calculate node end position
-            const endPos = pos + node.nodeSize;
-            
-            // Get the content and surrounding context
-            const contextSize = 30;
-            const beforeStart = Math.max(0, pos - contextSize);
-            const afterEnd = Math.min(editor.state.doc.content.size, endPos + contextSize);
-            
-            const content = node.text;
-            const contentBefore = editor.state.doc.textBetween(beforeStart, pos);
-            const contentAfter = editor.state.doc.textBetween(endPos, afterEnd);
-            
-            // Update metadata with current position and content
-            updatedTagMetadata[rangeId] = {
-              ...(updatedTagMetadata[rangeId] || {}),
-              id: rangeId,
-              tagId: tagId,
-              position: { from: pos, to: endPos },
-              content: content,
-              contentBefore: contentBefore,
-              contentAfter: contentAfter,
-              // Include tag attributes for better restoration
-              color: mark.attrs.color,
-              name: mark.attrs.name,
-              description: mark.attrs.description,
-              // Preserve creation timestamp if it exists
-              created: updatedTagMetadata[rangeId]?.created || new Date().toISOString(),
-              // Add last updated timestamp
-              updated: new Date().toISOString()
-            };
-          }
-        }
-        
-        return true;
-      });
-      
-      // Create the final tag metadata object - only include tags that still exist in the document
-      const finalTagMetadata = {};
-      for (const [key, value] of Object.entries(updatedTagMetadata)) {
-        if (foundTagIds.has(key)) {
-          finalTagMetadata[key] = value;
-        }
-      }
-      
-      // Update the editor storage with synchronized metadata
-      editor.storage.tagging.tagMetadata = finalTagMetadata;
-      
-      // Now save the synchronized state
-      const currentTaggingState = {
-        tags: { ...editor.storage.tagging.tags } || {},
-        documentTags: [...editor.storage.tagging.documentTags] || [],
-        tagMetadata: { ...finalTagMetadata } || {},
-        // Add document metadata
-        documentInfo: {
-          id: docId,
-          lastSaved: new Date().toISOString(),
-          tagCount: Object.keys(finalTagMetadata).length
-        }
-      };
-      
-      // Store by document ID
-      documentTagsMap.set(docId, currentTaggingState);
-      console.log(`Saved tag state for document ${docId} with ${Object.keys(finalTagMetadata).length} tags`);
-    } catch (error) {
-      console.error('Error saving document tags:', error);
-    }
+    // Use the saveTagData command from BlockAwareTaggingExtension
+    editor.commands.saveTagData();
+    console.log(`Saved tag state for document ${docId}`);
   }, [editor]);
   
   // Function to reset tagging state when switching documents
   const resetTaggingState = useCallback(() => {
     if (!editor) return;
     
-    // Clear all tags from the document
-    editor.commands.clearAllTags();
-    
-    // Reset to default state
+    // Use the resetTaggingState command from BlockAwareTaggingExtension
     editor.commands.resetTaggingState();
-    
     console.log('Reset tagging state');
   }, [editor]);
   
-  // Enhanced function to restore tags from storage for a document
+  // Function to restore tags from storage for a document
   const restoreTagsFromStorage = useCallback((docId: string) => {
     if (!editor || !docId) return;
     
-    const savedState = documentTagsMap.get(docId);
-    if (savedState) {
-      console.log(`Restoring tag state for document ${docId}`, savedState);
-      
-      // Set the flag to indicate tags are being restored
-      setIsRestoringTags(true);
-      
-      // Restore the saved tags and document tags to the editor storage
-      editor.storage.tagging.tags = savedState.tags;
-      editor.storage.tagging.documentTags = savedState.documentTags;
-      
-      // Restore tag metadata for content-based recovery
-      if (savedState.tagMetadata) {
-        editor.storage.tagging.tagMetadata = savedState.tagMetadata;
-      }
-      
-      // First update storage state and allow editor to stabilize before applying tags
-      editor.view.dispatch(editor.state.tr.setMeta(TaggingExtensionKey, editor.storage.tagging));
-
-      // Delay tag application to ensure editor state is stable
-      setTimeout(() => {
-        try {
-          // Only attempt to restore tags after editor has fully updated
-          if (!editor.isDestroyed && savedState.tagMetadata) {
-            // First clear any existing tag marks to prevent duplicates
-            const clearTr = editor.state.tr;
-            const markType = editor.schema.marks.tag;
-            
-            if (markType) {
-              // Remove all existing tag marks from the document
-              editor.state.doc.descendants((node, pos) => {
-                if (node.isText && node.marks.some(m => m.type.name === 'tag')) {
-                  clearTr.removeMark(pos, pos + node.nodeSize, markType);
-                  return false; // Continue with other nodes
-                }
-                return true;
-              });
-              
-              // Apply the clearing transaction
-              editor.view.dispatch(clearTr);
-            }
-            
-            // Create a queue of tags to process for content-based recovery
-            const tagQueue = Object.values(savedState.tagMetadata);
-            
-            // First try to find exact content matches for all tags
-            const contentMatches = new Map();
-            editor.state.doc.descendants((node, pos) => {
-              if (!node.isText) return true;
-              
-              const text = node.text || '';
-              
-              // Check each tag's content against this text
-              for (const metadata of tagQueue) {
-                if (metadata.content && text.includes(metadata.content)) {
-                  const index = text.indexOf(metadata.content);
-                  const from = pos + index;
-                  const to = from + metadata.content.length;
-                  
-                  if (from >= 0 && to <= editor.state.doc.content.size) {
-                    contentMatches.set(metadata.id, { from, to });
-                  }
-                }
-              }
-              
-              return true;
-            });
-            
-            // Now process tags with the found positions
-            const processNextTag = (index = 0) => {
-              if (index >= tagQueue.length) {
-                // All tags processed, mark restoration as complete
-                setIsRestoringTags(false);
-                return;
-              }
-              
-              const metadata = tagQueue[index];
-              try {
-                if (!metadata.tagId || !savedState.tags[metadata.tagId]) {
-                  // Skip if tag definition is missing
-                  setTimeout(() => processNextTag(index + 1), 20);
-                  return;
-                }
-                
-                const tag = savedState.tags[metadata.tagId];
-                
-                // Check if we found a content match for this tag
-                let position = null;
-                if (contentMatches.has(metadata.id)) {
-                  position = contentMatches.get(metadata.id);
-                } else if (metadata.position) {
-                  // Fall back to stored position if valid
-                  const isPositionValid = 
-                    metadata.position.from >= 0 && 
-                    metadata.position.to <= editor.state.doc.content.size &&
-                    metadata.position.from < metadata.position.to;
-                  
-                  if (isPositionValid) {
-                    position = metadata.position;
-                  } else {
-                    // Try content-based recovery as a last resort
-                    if (metadata.content && metadata.content.length > 0) {
-                      let found = false;
-                      let foundPos = null;
-                      
-                      // Search for the content in the document
-                      editor.state.doc.descendants((node, pos) => {
-                        if (found || !node.isText) return true;
-                        
-                        const text = node.text || '';
-                        const index = text.indexOf(metadata.content);
-                        
-                        if (index !== -1) {
-                          // Found potential match
-                          const from = pos + index;
-                          const to = from + metadata.content.length;
-                          
-                          // Validate found position
-                          if (from >= 0 && to <= editor.state.doc.content.size) {
-                            found = true;
-                            foundPos = { from, to };
-                            return false; // Stop searching
-                          }
-                        }
-                        
-                        return true;
-                      });
-                      
-                      if (found && foundPos) {
-                        position = foundPos;
-                      }
-                    }
-                  }
-                }
-                
-                // If we have a valid position, apply the tag
-                if (position && position.from >= 0 && position.to <= editor.state.doc.content.size) {
-                  try {
-                    // Get current text at the position to ensure tags are applied correctly
-                    const currentContent = editor.state.doc.textBetween(
-                      position.from, 
-                      position.to
-                    );
-                    
-                    // Only apply if there's actual content
-                    if (currentContent && currentContent.trim().length > 0) {
-                      // Create the mark directly
-                      const mark = editor.schema.marks.tag.create({
-                        id: metadata.id,
-                        tagId: metadata.tagId,
-                        color: tag.color || metadata.color,
-                        name: tag.name || metadata.name,
-                        description: tag.description || metadata.description,
-                        content: currentContent,
-                        contentBefore: metadata.contentBefore,
-                        contentAfter: metadata.contentAfter,
-                        lastUpdated: new Date().toISOString()
-                      });
-                      
-                      // Apply mark using a direct transaction
-                      const { from, to } = position;
-                      const tr = editor.state.tr;
-                      tr.addMark(from, to, mark);
-                      editor.view.dispatch(tr);
-                      
-                      // Update the tag metadata position
-                      metadata.position = { from, to };
-                      metadata.content = currentContent;
-                      
-                      console.log(`Successfully restored tag ${metadata.id} at position ${from}-${to}`);
-                    } else {
-                      console.warn(`Empty content at position for tag ${metadata.id}, skipping`);
-                    }
-                  } catch (markError) {
-                    console.error('Error applying tag mark:', markError);
-                  }
-                } else {
-                  console.log(`Could not find position for tag ${metadata.id}, content: "${metadata.content}"`);
-                }
-              } catch (error) {
-                console.error('Error processing tag:', error);
-              }
-              
-              // Process next tag with delay to prevent transaction conflicts
-              setTimeout(() => processNextTag(index + 1), 20);
-            };
-            
-            // Start processing the tag queue
-            processNextTag();
-          }
-        } catch (error) {
-          console.error('Error in tag restoration process:', error);
-        }
-      }, 500); // Increased timeout from 250ms to 500ms
-    }
+    // Use the loadTagData command from BlockAwareTaggingExtension
+    editor.commands.loadTagData(docId);
   }, [editor]);
-
-  // Add auto-save functionality to ensure tags are saved periodically
-  useEffect(() => {
-    if (!editor || !documentId) return;
-    
-    // Save tags whenever document content changes
-    const handleDocChange = debounce(() => {
-      saveCurrentDocumentTags(documentId);
-    }, 2000); // 2 second debounce
-    
-    // Setup event listeners for document changes
-    const updateListener = ({ editor, transaction }) => {
-      if (transaction.docChanged) {
-        handleDocChange();
-      }
-    };
-    
-    editor.on('update', updateListener);
-    
-    // Clean up
-    return () => {
-      editor.off('update', updateListener);
-      handleDocChange.cancel();
-    };
-  }, [editor, documentId, saveCurrentDocumentTags]);
 
   // Handle document ID changes
   useEffect(() => {
@@ -1443,72 +1202,62 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
       if (isDocumentChanged) {
         console.log(`Switching from document ${prevDocumentIdRef.current} to ${documentId}`);
         
+        // Explicitly set the current document ID
+        setCurrentDocumentId(documentId);
+        
         // Save tags from the document we're leaving
         if (prevDocumentIdRef.current) {
-          saveCurrentDocumentTags(prevDocumentIdRef.current);
+          console.log(`Saving tags for document ${prevDocumentIdRef.current}`);
+          // Direct storage access for more reliable saving
+          const currentStorage = editor.storage.blockAwareTagging;
+          const tagData = {
+            tags: currentStorage.tags || {},
+            documentTags: currentStorage.documentTags || [],
+            tagMetadata: currentStorage.tagMetadata || {},
+            blockTags: currentStorage.blockTags || {}
+          };
+          
+          // Store in the global documentTagsMap
+          (window as any).documentTagsMap.set(prevDocumentIdRef.current, tagData);
+          console.log('Tags saved:', tagData);
         }
         
-        // Only reset tags if we're not in the middle of restoring
-        if (!isRestoringTags) {
-          console.log('Loading document and applying tags:', documentId);
+        // Reset the tagging state
+        resetTaggingState();
+        
+        // After a slightly longer delay to ensure content is updated
+        setTimeout(() => {
+          console.log(`Loading tags for document ${documentId}`);
+          const savedTagData = (window as any).documentTagsMap.get(documentId);
           
-          // Don't reset tags when loading a document that might have tags
-          // Instead, just directly restore tags if they exist
-          const savedState = documentTagsMap.get(documentId);
-          if (savedState && Object.keys(savedState).length > 0) {
-            // Just restore without resetting
-            setTimeout(() => {
-              restoreTagsFromStorage(documentId);
-            }, 100);
+          if (savedTagData) {
+            console.log('Found saved tags:', savedTagData);
+            // Restore tag data directly to storage for more reliable loading
+            editor.storage.blockAwareTagging.tags = savedTagData.tags || {};
+            editor.storage.blockAwareTagging.documentTags = savedTagData.documentTags || [];
+            editor.storage.blockAwareTagging.tagMetadata = savedTagData.tagMetadata || {};
+            editor.storage.blockAwareTagging.blockTags = savedTagData.blockTags || {};
+            
+            // Force editor refresh
+            editor.view.dispatch(editor.state.tr);
           } else {
-            // No saved tags exist, safe to reset
-            resetTaggingState();
+            console.log('No saved tags found for document', documentId);
           }
-        } else {
-          console.log('Skip resetting tags - restoration in progress');
-        }
+        }, 200);
         
         // Update reference
         prevDocumentIdRef.current = documentId;
       }
     }
-  }, [documentId, editor, saveCurrentDocumentTags, resetTaggingState, restoreTagsFromStorage, isRestoringTags]);
-
-  // Also fix the TagMark CSS styling by adding a rule to the document head
-  useEffect(() => {
-    // Add CSS for tag mark to ensure proper z-index
-    if (typeof document !== 'undefined') {
-      const styleEl = document.createElement('style');
-      styleEl.textContent = `
-        .ProseMirror mark[data-type="tag"] {
-          z-index: 10;
-          position: relative;
-        }
-        
-        /* Ensure highlights have lower z-index than tags */
-        .ProseMirror mark.highlight {
-          z-index: 5;
-          position: relative;
-        }
-      `;
-      document.head.appendChild(styleEl);
-      
-      return () => {
-        document.head.removeChild(styleEl);
-      };
-    }
-  }, []);
+  }, [documentId, editor]);
 
   if (!mounted || !editor) {
     return null
   }
 
   return (
-    <div className="h-full w-full flex flex-col relative" ref={editorRef}>
-      <EditorContent 
-        editor={editor} 
-        className="flex-1 overflow-y-auto w-full"
-      />
+    <div className="h-full flex flex-col relative" ref={editorRef}>
+      <EditorContent editor={editor} className="h-full overflow-y-auto" />
 
       {/* Floating AI Icon with expandable toolbar */}
       {showAIIcon && !showAIInput && !showTagInput && (
