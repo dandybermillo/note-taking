@@ -61,6 +61,12 @@ import "@/components/ai-icon/ai-icon.css"
 import { TagInput } from "@/components/toolbar/dynamic-tag-input"
 import "@/components/toolbar/toolbar.css"
 
+// Import tag inline UI
+import { setupTagInlineUI } from '@/lib/extensions/tagging/tag-inline-ui'
+
+// Import the TagCursorFix extension
+import { TagCursorFix } from "@/lib/extensions/tagging/tag-cursor-fix"
+
 const lowlight = createLowlight(common)
 
 // Add the custom spacer node extension
@@ -183,6 +189,8 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
       }),
       // Add whitespace preservation extension
       WhitespaceExtension,
+      // Add cursor fix extension for tags
+      TagCursorFix,
       CodeBlockLowlight.configure({
         lowlight,
         HTMLAttributes: {
@@ -781,11 +789,26 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     
     const { from, to } = selectionRange;
     
+    // Remember the current cursor position
+    const endPos = to;
+    
     // Apply the tag to the selected text
     editor.commands.addTag(tag, from, to);
     
     // Close the tag input
     setShowTagInput(false);
+    
+    // Explicitly re-position the cursor after a short delay
+    // to ensure the cursor position change happens after all transactions are complete
+    setTimeout(() => {
+      if (editor && !editor.isDestroyed) {
+        // Use the chain API with focus to ensure cursor is visible
+        editor.chain()
+          .focus()
+          .setTextSelection(endPos)
+          .run();
+      }
+    }, 10);
     
     // Hide the AI icon after a short delay
     setTimeout(() => {
@@ -1498,6 +1521,73 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
       };
     }
   }, []);
+
+  useEffect(() => {
+    if (editor && documentId) {
+      // Setup a recurrent tag reapplication mechanism
+      const tagMonitorInterval = setInterval(() => {
+        if (editor.isDestroyed) {
+          clearInterval(tagMonitorInterval);
+          return;
+        }
+        
+        // Check if we have tags in storage but none visible in the document
+        const savedState = documentTagsMap.get(documentId);
+        if (!savedState || !savedState.tagMetadata) return;
+        
+        const tagCount = Object.keys(savedState.tagMetadata).length;
+        if (tagCount === 0) return;
+        
+        // Count visible tags in the document
+        let visibleTagCount = 0;
+        editor.state.doc.descendants((node, pos) => {
+          if (node.isText && node.marks.some(m => m.type.name === 'tag')) {
+            visibleTagCount++;
+          }
+          return true;
+        });
+        
+        // If tags in storage but none visible, reapply them
+        if (tagCount > 0 && visibleTagCount === 0) {
+          console.log(`Tag monitor detected missing tags: ${tagCount} in storage, ${visibleTagCount} visible. Reapplying...`);
+          restoreTagsFromStorage(documentId);
+        }
+      }, 1000); // Check every second
+      
+      // Clean up interval on unmount
+      return () => {
+        clearInterval(tagMonitorInterval);
+      };
+    }
+  }, [editor, documentId, restoreTagsFromStorage]);
+
+  // Add this useEffect to initialize the inline UI
+  useEffect(() => {
+    if (editor) {
+      console.log("Initializing tag inline UI in editor component");
+      
+      // Make editor available globally for the inline UI
+      window.editor = editor;
+      
+      // Setup the tag inline UI
+      setupTagInlineUI();
+      
+      // Add custom window object to help with debugging
+      if (typeof window !== 'undefined') {
+        (window as any).editorInstance = editor;
+      }
+    }
+    
+    return () => {
+      // Clean up global reference when component unmounts
+      if (window.editor === editor) {
+        window.editor = undefined;
+        if (typeof window !== 'undefined') {
+          (window as any).editorInstance = undefined;
+        }
+      }
+    };
+  }, [editor]);
 
   if (!mounted || !editor) {
     return null
