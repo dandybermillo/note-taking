@@ -18,7 +18,6 @@ import Highlight from "@tiptap/extension-highlight"
 import TextStyle from "@tiptap/extension-text-style"
 import Color from "@tiptap/extension-color"
 import { useEffect, useState, useRef, useCallback } from "react"
-import { setupTagInlineUI } from '@/lib/extensions/tagging/tag-inline-ui'
 import { BotIcon, XIcon, TagIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -55,9 +54,6 @@ import {
 
 // Import types
 import { Tag } from "@/lib/extensions/tagging/tag-types"
-
-// Import the TagCursorFix extension
-import { TagCursorFix } from "@/lib/extensions/tagging/tag-cursor-fix"
 
 const lowlight = createLowlight(common)
 
@@ -218,8 +214,6 @@ export default function BlockEditor({ content, onUpdate, minimal = false, onEdit
       }),
       // Add whitespace preservation extension
       WhitespaceExtension,
-      // Add cursor fix extension for tags
-      TagCursorFix,
       CodeBlockLowlight.configure({
         lowlight,
         HTMLAttributes: {
@@ -1244,15 +1238,9 @@ export default function BlockEditor({ content, onUpdate, minimal = false, onEdit
   // Add this useEffect to initialize the inline UI
   useEffect(() => {
     if (editor) {
-      console.log("Initializing tag inline UI in block editor component");
+      console.log("Editor initialized, but skipping tag inline UI setup");
       
-      // Make editor available globally for the inline UI
-      window.editor = editor;
-      
-      // Setup the tag inline UI
-      setupTagInlineUI();
-      
-      // Add custom window object to help with debugging
+      // Make editor available globally for debugging
       if (typeof window !== 'undefined') {
         (window as any).editorInstance = editor;
       }
@@ -1260,11 +1248,8 @@ export default function BlockEditor({ content, onUpdate, minimal = false, onEdit
     
     return () => {
       // Clean up global reference when component unmounts
-      if (window.editor === editor) {
-        window.editor = undefined;
-        if (typeof window !== 'undefined') {
-          (window as any).editorInstance = undefined;
-        }
+      if (typeof window !== 'undefined') {
+        (window as any).editorInstance = undefined;
       }
     };
   }, [editor]);

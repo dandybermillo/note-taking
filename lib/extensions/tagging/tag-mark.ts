@@ -1,8 +1,6 @@
 import { Mark, mergeAttributes } from '@tiptap/core';
 import './tag-inline-ui.css';
-import { Plugin } from '@tiptap/pm/state';
-import { PluginKey } from '@tiptap/pm/state';
-import { TextSelection } from '@tiptap/pm/state';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
 
 export const TagMark = Mark.create({
   name: 'tag',
@@ -114,99 +112,29 @@ export const TagMark = Mark.create({
     };
   },
   
-  // Custom plugin to fix cursor position after tag application
   addProseMirrorPlugins() {
     return [
       new Plugin({
-        key: new PluginKey('tagMarkCursorFix'),
-        
-        // This plugin prevents the tag mark from affecting cursor position during key operations
-        props: {
-          // Process key events to prevent cursor jumping
-          handleKeyDown(view, event) {
-            // Skip Delete key which is handled by TagCursorFix extension
-            if (event.key === 'Delete') {
-              return false;
-            }
-            
-            // Handle only Enter and Backspace
-            if (event.key === 'Enter' || event.key === 'Backspace') {
-              // Store the current cursor position before any key event
-              const currentPos = view.state.selection.from;
-              
-              // Set a meta flag that this transaction is from a key operation that needs cursor protection
-              const tr = view.state.tr;
-              tr.setMeta('cursorProtection', { 
-                key: event.key,
-                position: currentPos 
-              });
-              view.dispatch(tr);
-              
-              // Don't prevent the default handling
-              return false;
-            }
-            return false;
-          }
-        },
-        
-        // Process transactions to prevent cursor jumping
+        key: new PluginKey('tag-cursor-position'),
+        // Store cursor position before each transaction
         appendTransaction(transactions, oldState, newState) {
-          // Only process transactions with cursor protection flag
-          if (!transactions.some(tr => tr.getMeta('cursorProtection'))) {
-            return null;
-          }
-          
-          // Get key information from transaction meta
-          const keyInfo = transactions.find(tr => tr.getMeta('cursorProtection'))?.getMeta('cursorProtection');
-          const lastKey = keyInfo?.key || null;
-          
-          // Skip Delete key which is now handled by TagCursorFix
-          if (lastKey === 'Delete') {
-            return null;
-          }
-          
-          // Regular cursor jump detection
-          const oldPos = oldState.selection.from;
-          const newPos = newState.selection.from;
-          const docSize = newState.doc.content.size;
-          const cursorJumped = newPos >= docSize - 5 && Math.abs(newPos - oldPos) > 20;
-          
-          // Determine if we need to handle this transaction
-          const needsHandling = cursorJumped || lastKey === 'Backspace';
-          
-          if (needsHandling) {
-            // Create a transaction to fix the cursor position
-            const tr = newState.tr;
-            tr.setMeta('cursorPositionFixed', true);
+          if (transactions.some(tr => tr.docChanged)) {
+            const oldSelection = oldState.selection;
+            const newSelection = newState.selection;
             
-            // Calculate better position - either old position or adjusted for document changes
-            let targetPos = oldPos;
-            
-            // Adjust for specific keys
-            if (lastKey === 'Enter') {
-              // If we were at the end of a line, position at start of new line
-              const wasAtLineEnd = oldState.selection.$from.pos === oldState.selection.$from.end();
-              if (wasAtLineEnd) {
-                targetPos += 1;
-              }
-            } else if (lastKey === 'Backspace') {
-              // For Backspace, adjust position backwards
-              if (oldPos > 0) {
-                targetPos = Math.max(0, oldPos - 1);
+            // If selection changed during a doc change, we need to ensure it's valid
+            if (oldSelection.from !== newSelection.from || oldSelection.to !== newSelection.to) {
+              // Check if we're inside a tag mark
+              const $pos = newState.doc.resolve(newSelection.from);
+              const marks = $pos.marks();
+              const hasMark = marks.some(mark => mark.type.name === 'tag');
+              
+              if (hasMark) {
+                // For tags, make sure cursor is placed appropriately
+                return newState.tr.setSelection(newSelection);
               }
             }
-            
-            // Ensure the position is valid
-            targetPos = Math.min(targetPos, docSize - 1);
-            targetPos = Math.max(0, targetPos);
-            
-            // Set the selection to the calculated position
-            tr.setSelection(TextSelection.create(newState.doc, targetPos));
-            console.log('TagMark fixing cursor for', lastKey, 'from', oldPos, 'to', targetPos);
-            
-            return tr;
           }
-          
           return null;
         }
       })
@@ -217,72 +145,47 @@ export const TagMark = Mark.create({
     return {
       id: {
         default: null,
-        parseHTML: element => element.getAttribute('data-range-id'),
-        renderHTML: attributes => {
-          if (!attributes.id) return {};
-          return { 'data-range-id': attributes.id };
-        },
       },
       tagId: {
         default: null,
-        parseHTML: element => element.getAttribute('data-tag-id'),
-        renderHTML: attributes => {
-          if (!attributes.tagId) return {};
-          return { 'data-tag-id': attributes.tagId };
-        },
-      },
-      color: {
-        default: '#3366FF',
-        parseHTML: element => {
-          // Extract color from style attribute
-          const style = element.getAttribute('style') || '';
-          const match = style.match(/border-bottom-color: ([^;]+);/);
-          return match ? match[1] : '#3366FF';
-        },
-        renderHTML: attributes => {
-          return {}; // Color is handled in the style attribute
-        },
       },
       name: {
-        default: '',
+        default: null,
         parseHTML: element => element.getAttribute('data-tag-name'),
         renderHTML: attributes => {
           if (!attributes.name) return {};
           return { 'data-tag-name': attributes.name };
         },
       },
-      description: {
-        default: '',
-        parseHTML: element => element.getAttribute('title'),
+      color: {
+        default: '#3366FF',
+        parseHTML: element => element.getAttribute('data-tag-color'),
         renderHTML: attributes => {
-          if (!attributes.description) return {};
-          return { 'title': attributes.description };
+          // Set both attribute and style for better support
+          if (!attributes.color) return {};
+          
+          return {
+            'data-tag-color': attributes.color,
+            'style': `--tag-color: ${attributes.color}; border-bottom-color: ${attributes.color};`
+          };
         },
       },
-      // Content tracking attributes
+      description: {
+        default: null,
+        parseHTML: element => element.getAttribute('data-tag-description'),
+        renderHTML: attributes => {
+          if (!attributes.description) return {};
+          return { 'data-tag-description': attributes.description };
+        },
+      },
       content: {
         default: '',
-        parseHTML: element => element.getAttribute('data-content'),
-        renderHTML: attributes => {
-          if (!attributes.content) return {};
-          return { 'data-content': attributes.content };
-        },
       },
       contentBefore: {
         default: '',
-        parseHTML: element => element.getAttribute('data-content-before'),
-        renderHTML: attributes => {
-          if (!attributes.contentBefore) return {};
-          return { 'data-content-before': attributes.contentBefore };
-        },
       },
       contentAfter: {
         default: '',
-        parseHTML: element => element.getAttribute('data-content-after'),
-        renderHTML: attributes => {
-          if (!attributes.contentAfter) return {};
-          return { 'data-content-after': attributes.contentAfter };
-        },
       },
       lastUpdated: {
         default: null,
@@ -302,10 +205,14 @@ export const TagMark = Mark.create({
       {
         tag: 'span[data-tag]',
       },
-      // Also parse <mark> tags with data-type=tag
+      // Also parse mark tags with data-type=tag for backward compatibility
       {
         tag: 'mark[data-type="tag"]',
       },
+      // Support legacy tagged spans
+      {
+        tag: 'span.tagged-text',
+      }
     ]
   },
   
@@ -343,35 +250,26 @@ export const TagMark = Mark.create({
     const tagName = HTMLAttributes.name || 'Tag';
     const rangeId = HTMLAttributes.id;
     
-    // Create the inline UI with remove button using data attribute
-    // We'll use JavaScript to convert this data attribute into actual DOM elements
-    const inlineUiData = JSON.stringify({
-      id: tagId,
-      name: tagName,
-      color: color,
-      rangeId: rangeId
-    });
-    
-    return [
-      'mark',
-      mergeAttributes(
-        { 'data-tag': '' },
-        { 'data-type': 'tag' },
-        { 
-          'class': 'tagged-text',
-          'data-tag-name': HTMLAttributes.name,
-          'title': HTMLAttributes.description || HTMLAttributes.name,
-          'style': inlineStyle,
-          'data-last-updated': updatedTimestamp,
-          'data-tag-id': HTMLAttributes.tagId,
-          'data-range-id': HTMLAttributes.id,
-          'data-inline-ui': inlineUiData,
-        },
-        this.options.HTMLAttributes,
-        HTMLAttributes,
-      ),
-      0,
-    ]
+    // Generate data attributes for the tag element without the mouseover handler
+    return ['span', mergeAttributes(
+      {
+        'data-tag': true,
+        'data-tag-id': tagId,
+        'data-tag-name': HTMLAttributes.name,
+        'data-tag-color': color,
+        'data-tag-range-id': rangeId,
+        'data-last-updated': updatedTimestamp,
+        'style': inlineStyle,
+        'class': 'tagged-text',
+        // Remove onmouseenter event handler
+        // Add tabindex to make the element focusable for accessibility
+        'tabindex': '0',
+        // Add ARIA attributes for accessibility
+        'role': 'mark',
+        'aria-label': `${tagName} tag`,
+      },
+      HTMLAttributes
+    )]
   },
   
   // Add support for text tracking
@@ -385,4 +283,4 @@ export const TagMark = Mark.create({
       // Add any mark-specific storage if needed
     };
   },
-}); 
+});

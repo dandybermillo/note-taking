@@ -61,11 +61,11 @@ import "@/components/ai-icon/ai-icon.css"
 import { TagInput } from "@/components/toolbar/dynamic-tag-input"
 import "@/components/toolbar/toolbar.css"
 
-// Import tag inline UI
-import { setupTagInlineUI } from '@/lib/extensions/tagging/tag-inline-ui'
+// Import tag inline UI - commented out as we're disabling hover-based untag
+// import { setupTagInlineUI } from '@/lib/extensions/tagging/tag-inline-ui'
 
-// Import the TagCursorFix extension
-import { TagCursorFix } from "@/lib/extensions/tagging/tag-cursor-fix"
+// Import cursor position helper
+import { preserveCursorPosition, restoreCursorPosition, updateWithCursorPreservation } from "@/lib/extensions/cursor-position-helper"
 
 const lowlight = createLowlight(common)
 
@@ -179,8 +179,31 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
         onTagApplied: (tag: Tag, range: any) => {
           console.log('Tag applied:', tag, range);
         },
-        onTagRemoved: (tagId: string, rangeId: string) => {
-          console.log('Tag removed:', tagId, rangeId);
+        onTagRemoved: (tagId: string, rangeId: string, info?: any) => {
+          console.log('Tag removed:', tagId, rangeId, info);
+          
+          // Ensure any reference to this tag in the document is properly cleaned up
+          if (info?.content) {
+            console.log(`Removed tag with content: "${info.content}"`);
+            
+            // If we have a document ID, update the tag storage for this document
+            if (documentId) {
+              const docTags = documentTagsMap.get(documentId);
+              if (docTags && docTags.tagMetadata) {
+                // Remove this tag from metadata if it exists
+                if (docTags.tagMetadata[rangeId]) {
+                  delete docTags.tagMetadata[rangeId];
+                  console.log(`Removed tag ${rangeId} from document ${documentId} metadata`);
+                  
+                  // Save the updated tags
+                  documentTagsMap.set(documentId, {
+                    ...docTags,
+                    lastUpdated: new Date().toISOString()
+                  });
+                }
+              }
+            }
+          }
         },
         // New callback for document tags
         onDocumentTagsUpdated: (tags: Tag[]) => {
@@ -189,8 +212,6 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
       }),
       // Add whitespace preservation extension
       WhitespaceExtension,
-      // Add cursor fix extension for tags
-      TagCursorFix,
       CodeBlockLowlight.configure({
         lowlight,
         HTMLAttributes: {
@@ -789,8 +810,8 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     
     const { from, to } = selectionRange;
     
-    // Remember the current cursor position
-    const endPos = to;
+    // Save cursor position using helper
+    const position = preserveCursorPosition(editor);
     
     // Apply the tag to the selected text
     editor.commands.addTag(tag, from, to);
@@ -798,17 +819,12 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     // Close the tag input
     setShowTagInput(false);
     
-    // Explicitly re-position the cursor after a short delay
-    // to ensure the cursor position change happens after all transactions are complete
+    // Explicitly restore cursor position after a short delay
     setTimeout(() => {
       if (editor && !editor.isDestroyed) {
-        // Use the chain API with focus to ensure cursor is visible
-        editor.chain()
-          .focus()
-          .setTextSelection(endPos)
-          .run();
+        restoreCursorPosition(editor, position);
       }
-    }, 10);
+    }, 20);
     
     // Hide the AI icon after a short delay
     setTimeout(() => {
@@ -1564,15 +1580,9 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
   // Add this useEffect to initialize the inline UI
   useEffect(() => {
     if (editor) {
-      console.log("Initializing tag inline UI in editor component");
+      console.log("Editor initialized, but skipping tag inline UI setup");
       
-      // Make editor available globally for the inline UI
-      window.editor = editor;
-      
-      // Setup the tag inline UI
-      setupTagInlineUI();
-      
-      // Add custom window object to help with debugging
+      // Make editor available globally for debugging
       if (typeof window !== 'undefined') {
         (window as any).editorInstance = editor;
       }
@@ -1580,14 +1590,36 @@ export default function Editor({ content, onUpdate, minimal = false, onEditorRea
     
     return () => {
       // Clean up global reference when component unmounts
-      if (window.editor === editor) {
-        window.editor = undefined;
-        if (typeof window !== 'undefined') {
-          (window as any).editorInstance = undefined;
-        }
+      if (typeof window !== 'undefined') {
+        (window as any).editorInstance = undefined;
       }
     };
   }, [editor]);
+
+  // Update the editor content change handler to use cursor preservation
+  useEffect(() => {
+    if (editor) {
+      // Use the cursor preserving update handler
+      const onChangeHandler = (e) => {
+        // Avoid updating during cursor restoration
+        if (editor.getAttributes('restoringCursor')) return;
+        
+        // Use updateWithCursorPreservation instead of direct update
+        updateWithCursorPreservation(editor, (contentJson) => {
+          // Get HTML for the actual content update
+          const html = editor.getHTML();
+          onUpdate(html);
+        });
+      };
+
+      // Custom update handler
+      editor.on("update", onChangeHandler);
+
+      return () => {
+        editor.off("update", onChangeHandler);
+      };
+    }
+  }, [editor, onUpdate]);
 
   if (!mounted || !editor) {
     return null
